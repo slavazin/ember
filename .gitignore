@@ -1,0 +1,34 @@
+# ── Planning material — not part of the submission ──
+# All planning/doctrine files live in planning/ (put new planning files THERE,
+# not at repo root, so nothing is ever forgotten from this list).
+planning/
+
+# Agent instruction files must sit at repo root to be loaded, so they are
+# ignored individually. They are planning-facing: the submission gets its own
+# outward AGENTS.md later, at which point these lines are removed.
+AGENTS.md
+CLAUDE.md
+
+# Local tooling & editor state
+.claude/
+.obsidian/
+.vscode/
+.idea/
+*.swp
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+dist/
+build/
+coverage/
+*.log
+npm-debug.log*
+
+# Secrets & local env — never committed
+.env
+.env.*
+*.local
