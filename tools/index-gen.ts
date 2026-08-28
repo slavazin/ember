@@ -10,8 +10,17 @@
 //                                                    exit non-zero on any divergence
 //                                                    (the CI form)
 
-import { readFileSync, writeFileSync, readdirSync, realpathSync } from 'node:fs';
-import { join } from 'node:path';
+import {
+  readFileSync,
+  writeFileSync,
+  readdirSync,
+  realpathSync,
+  renameSync,
+  chmodSync,
+  statSync,
+  rmSync,
+} from 'node:fs';
+import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -25,8 +34,7 @@ import {
 } from './index-contract.ts';
 
 // The id prefix each store's entry files carry, per the store SCHEMAs
-// (corpus/<store>/SCHEMA.md fixes D-nnnn.md / R-nnnn.md / B-nnnn.md). Discovery keys on
-// this shape, so README.md and SCHEMA.md never match it.
+// (corpus/<store>/SCHEMA.md fixes D-nnnn.md / R-nnnn.md / B-nnnn.md).
 const STORE_PREFIX: Record<StoreId, string> = {
   decisions: 'D',
   rules: 'R',
@@ -38,10 +46,15 @@ function storeDirRel(store: StoreId): string {
   return `corpus/${store}`;
 }
 
-// Entry-file names in a store, sorted lexically. The module sorts records by id at
-// render time, so the written bytes are stable regardless of directory-read order; the
-// lexical pre-sort makes iteration and error reporting deterministic and fixes the
-// order of any two entries that share an id integer.
+// Entry-file names in a store, sorted lexically. Discovery matches the canonical admitted
+// entry filename — the store prefix and the zero-padded four-digit id each SCHEMA fixes
+// (`^D-\d{4}\.md$`) — the identical rule the verifier applies, so producer and verifier
+// resolve the same set and their indexes cannot drift. `README.md`, `SCHEMA.md`, and
+// pre-admission drafts (which carry no minted id) fall outside it; a file matching the
+// shape but lacking an `id` in frontmatter is caught loudly by parseEntry, never silently
+// indexed. The module sorts records by id at render time, so the written bytes are stable
+// regardless of directory-read order; the lexical pre-sort keeps iteration and error
+// reporting deterministic.
 export function discoverEntryFiles(root: string, store: StoreId): string[] {
   const relDir = storeDirRel(store);
   let names: string[];
@@ -51,7 +64,8 @@ export function discoverEntryFiles(root: string, store: StoreId): string[] {
     if (errCode(e) === 'ENOENT') throw new Error(`store directory not found: ${relDir}`);
     throw new Error(`cannot read store directory ${relDir}: ${detail(e)}`);
   }
-  const pattern = new RegExp(`^${STORE_PREFIX[store]}-\\d+\\.md$`);
+  // One canonical rule shared by producer and verifier; a candidate to hoist into the module.
+  const pattern = new RegExp(`^${STORE_PREFIX[store]}-\\d{4}\\.md$`);
   return names.filter((name) => pattern.test(name)).sort();
 }
 
@@ -118,7 +132,7 @@ export function processStore(root: string, store: StoreId, check: boolean): Outc
     const plan = planStore(root, store);
     if (plan.current) return { store, target: plan.target, kind: 'unchanged' };
     if (check) return { store, target: plan.target, kind: 'stale' };
-    writeFileSync(join(root, plan.target), plan.after, 'utf8');
+    atomicReplace(join(root, plan.target), plan.after);
     return { store, target: plan.target, kind: 'written' };
   } catch (e) {
     return { store, target, kind: 'error', detail: detail(e) };
@@ -126,9 +140,10 @@ export function processStore(root: string, store: StoreId, check: boolean): Outc
 }
 
 // The CLI core minus process control: returns an exit code and a report, so it is unit
-// testable. Write mode updates each stale host in place; every store maps to a distinct
-// file, so a run that errors on one store leaves the others correctly written and no
-// file half-written — a re-run is clean. Check mode writes nothing.
+// testable. Write mode updates each stale host through an atomic replace, so a failed
+// write never truncates a host; every store maps to a distinct file, so a run that errors
+// on one store leaves the others correctly written and a re-run is clean. Check mode
+// writes nothing.
 export function run(root: string, argv: readonly string[]): { code: number; report: string } {
   const check = argv.includes('--check');
   const unknown = argv.filter((arg) => arg !== '--check');
@@ -183,6 +198,31 @@ function errCode(e: unknown): string | undefined {
   return typeof e === 'object' && e !== null && 'code' in e
     ? String((e as { code?: unknown }).code)
     : undefined;
+}
+
+// Replace a host's bytes by writing a sibling temporary file and renaming it over the
+// target. The rename is atomic within one filesystem, so a failed or interrupted write
+// leaves the host either fully old or fully new, never truncated. The host's existing
+// permissions carry over when they can be read; the temporary file is removed if the
+// write cannot complete.
+function atomicReplace(absPath: string, data: string): void {
+  const tmp = join(dirname(absPath), `.${basename(absPath)}.index-gen.${process.pid}.tmp`);
+  try {
+    writeFileSync(tmp, data, 'utf8');
+    try {
+      chmodSync(tmp, statSync(absPath).mode);
+    } catch {
+      // no readable host mode — the default file mode stands
+    }
+    renameSync(tmp, absPath);
+  } catch (e) {
+    try {
+      rmSync(tmp, { force: true });
+    } catch {
+      // best-effort cleanup; the original write failure is what surfaces
+    }
+    throw e;
+  }
 }
 
 // The repo root, resolved from this file's own location (tools/index-gen.ts -> root), so
