@@ -23,5 +23,19 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run gen:check # generated store indexes match a fresh render (index-gen --check)
-      - run: npm run lint # entry contract, constitution cap, frozen paths, layer/tenant seam
-      # frozen-path stays a disclosed no-op here until a base ref is passed (--base) — a follow-up.
+      # Frozen-path must diff against the state BEFORE the change, not HEAD against itself. On a
+      # PR that base is the PR base; on a push to main it is the pre-push commit. corpus-lint's
+      # default (merge-base with origin/main) collapses to HEAD on push-to-main, so pass the base
+      # explicitly per event; fetch-depth: 0 above makes both commits reachable.
+      - name: Lint (entry contract, caps, frozen paths, layer/tenant seam)
+        run: |
+          case "${{ github.event_name }}" in
+            pull_request) base="${{ github.event.pull_request.base.sha }}" ;;
+            push)         base="${{ github.event.before }}" ;;
+            *)            base="" ;;
+          esac
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            npm run lint                     # new branch / no before-SHA — fall back to default base
+          else
+            npm run lint -- --base "$base"
+          fi
