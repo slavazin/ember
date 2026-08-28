@@ -192,14 +192,18 @@ test('five-slot: valid decision, rule, belief all pass', () => {
   );
 });
 
-test('five-slot: an id-bearing entry at a non-canonical filename is flagged; a draft is not', () => {
-  // id present but the name is not D-nnnn.md — it would evade the filename-keyed index/frozen checks
-  withCorpus({ 'corpus/decisions/D-7.md': DECISION }, (root) =>
-    assert.ok(errors(run(root, 'five-slot')).some((f) => /not canonical/.test(f.message))),
+test('five-slot: id must match its canonical filename; a draft is exempt', () => {
+  // D-0008.md carrying id D-0007 — index keys on the id, frozen-path on the filename
+  withCorpus({ 'corpus/decisions/D-0008.md': DECISION }, (root) =>
+    assert.ok(errors(run(root, 'five-slot')).some((f) => /match its id/.test(f.message))),
   );
-  // a draft (no id) at a slug name is not flagged for canonicality
+  // a non-canonical id shape is flagged
+  withCorpus({ 'corpus/decisions/D-7.md': DECISION.replace('id: D-0007', 'id: D-7') }, (root) =>
+    assert.ok(errors(run(root, 'five-slot')).some((f) => /not a canonical/.test(f.message))),
+  );
+  // a draft (no id) at a slug name is exempt from the identity check
   withCorpus({ 'corpus/decisions/new-decision.md': DECISION.replace('id: D-0007\n', '') }, (root) =>
-    assert.ok(!errors(run(root, 'five-slot')).some((f) => /not canonical/.test(f.message))),
+    assert.ok(!errors(run(root, 'five-slot')).some((f) => /(match its id|not a canonical)/.test(f.message))),
   );
 });
 
@@ -544,6 +548,65 @@ test('check-seam: no derivable tenant vocabulary is a disclosed no-op skip', () 
     assert.equal(res.findings.length, 0);
     assert.equal(res.skips.length, 1);
   });
+});
+
+// ── locks for the Qodo review findings (presence/shape hardening) ──
+
+test('five-slot: required lifecycle/hook fields must be present; status must be a valid enum', () => {
+  withCorpus({ 'corpus/decisions/D-0007.md': DECISION.replace('status: active\n', '') }, (root) =>
+    assert.ok(errors(run(root, 'five-slot')).some((f) => /'status'/.test(f.message))),
+  );
+  withCorpus({ 'corpus/decisions/D-0007.md': DECISION.replace('status: active', 'status: nonsense') }, (root) =>
+    assert.ok(errors(run(root, 'five-slot')).some((f) => /must be one of/.test(f.message))),
+  );
+  withCorpus({ 'corpus/beliefs/B-0001.md': BELIEF.replace('consult-when: estimating datastore burst capacity\n', '') }, (root) =>
+    assert.ok(errors(run(root, 'five-slot')).some((f) => /consult-when/.test(f.message))),
+  );
+  withCorpus({ 'corpus/beliefs/B-0001.md': BELIEF.replace('postdiction: false\n', '') }, (root) =>
+    assert.ok(errors(run(root, 'five-slot')).some((f) => /postdiction/.test(f.message))),
+  );
+});
+
+test('five-slot: recurrences must be ≥2 anchored maps, not bare strings', () => {
+  const bad = DECISION.replace(/recurrences:\n(  - .*\n)+/, 'recurrences: [foo, bar]\n');
+  withCorpus({ 'corpus/decisions/D-0007.md': bad }, (root) =>
+    assert.ok(errors(run(root, 'five-slot')).some((f) => /recurrences/.test(f.message))),
+  );
+});
+
+test('five-slot: a belief reference needs a non-empty class plus price or categorical', () => {
+  const emptyClass = BELIEF.replace(/reference:\n(  .*\n)+/, 'reference:\n  class:\n  price: {value: 1, source: x, as-of: 2026-08-01}\n');
+  withCorpus({ 'corpus/beliefs/B-0001.md': emptyClass }, (root) => assert.ok(errors(run(root, 'five-slot')).some((f) => /reference/.test(f.message))));
+  const noPrice = BELIEF.replace(/reference:\n(  .*\n)+/, 'reference:\n  class: base-rate\n');
+  withCorpus({ 'corpus/beliefs/B-0001.md': noPrice }, (root) => assert.ok(errors(run(root, 'five-slot')).some((f) => /reference/.test(f.message))));
+  // a categorical reference (no price map) is accepted
+  const categorical = BELIEF.replace(/reference:\n(  .*\n)+/, 'reference:\n  class: incumbent\n  categorical: unchanged\n');
+  withCorpus({ 'corpus/beliefs/B-0001.md': categorical }, (root) => assert.equal(errors(run(root, 'five-slot')).length, 0));
+});
+
+test('check-seam: a fake index-marker region only exempts the store\'s own host, not other layer files', () => {
+  const fake = [markers('decisions').begin, 'this role secretly mentions pool-exhaustion', markers('decisions').end, ''].join('\n');
+  withCorpus({ 'scenarios/pool-exhaustion-a/x.txt': '', 'roles/recon.md': fake }, (root) =>
+    assert.ok(errors(run(root, 'check-seam')).some((f) => /pool-exhaustion/.test(f.message))),
+  );
+});
+
+test('escapes: an unclosed other( does not borrow a closing paren from a later line', () => {
+  const body = DECISION.replace('## Decision\n', '## Decision\nsee other(foo here\nand later a paren) elsewhere\n');
+  withCorpus({ 'corpus/decisions/D-0007.md': body }, (root) =>
+    assert.ok(errors(run(root, 'escapes')).some((f) => /unclosed/.test(f.message))),
+  );
+});
+
+test('constitution-cap: bare-prose "Article N" is not counted, only marked headings', () => {
+  const body = articleHeadings(CONSTITUTION_ARTICLE_CAP) + '\nArticle 11 is discussed below in prose.\n';
+  withCorpus({ [CONSTITUTION_SKILL]: body }, (root) => assert.equal(errors(run(root, 'constitution-cap')).length, 0));
+});
+
+test('do-dont: a Do and Don\'t split by a blank line are not a valid pair', () => {
+  withCorpus({ 'corpus/x/README.md': '# r', 'corpus/x/SCHEMA.md': "# S\n\n**Do:** near.\n\n**Don't:** far, across a blank line.\n" }, (root) =>
+    assert.ok(errors(run(root, 'do-dont')).some((f) => /same block/.test(f.message))),
+  );
 });
 
 // ── the whole real repo is green today (locks the today-green guarantee) ──

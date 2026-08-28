@@ -369,16 +369,29 @@ function fiveSlot(ctx: Ctx): RuleResult {
       const admitted = scalarPresent(fm.data, 'id');
       const fail = (m: string) => findings.push({ rule: 'five-slot', file: relPath, severity: 'error', message: m });
 
-      // An id-bearing entry must sit at its canonical filename, or it evades the
-      // filename-keyed index and frozen checks while looking admitted here.
-      if (admitted && !isAdmittedFilename(store, file)) fail(`entry carries an id but the filename is not canonical — expected ${ADMITTED_PREFIX[store]}-nnnn.md`);
-
       if (!fm.present) fail('no frontmatter block');
       if (!hasTitle(fm.body)) fail("missing '# ' summary line");
 
+      // Identity: an id-bearing entry must be named exactly `<id>.md` with a canonical id.
+      // The index keys on the id and frozen-path keys on the filename; if the two disagree
+      // (D-0008.md carrying id D-0007) they resolve to different entries.
+      if (admitted) {
+        const id = asString(fm.data['id']);
+        const prefix = ADMITTED_PREFIX[store] ?? '';
+        if (!new RegExp(`^${prefix}-\\d{4}$`).test(id)) fail(`id '${id}' is not a canonical ${prefix}-nnnn identifier`);
+        else if (file !== `${id}.md`) fail(`filename must be '${id}.md' to match its id — found '${file}'`);
+      }
+
+      // status: present and one of the store's lifecycle values — a frozen entry may only
+      // flip status among these, so a nonsense value must not pass here.
+      requireEnum(fail, fm.data, 'status', STATUS_VALUES[store] ?? []);
+
       if (store === 'decisions') {
         for (const s of ['Decision', 'Warrant', 'Revisit']) if (!hasSection(fm.body, s)) fail(`missing section '## ${s}'`);
-        if (admitted && !arrayLen(fm.data['recurrences'], 2)) fail('recurrences must list ≥2 anchored occurrences');
+        if (admitted) {
+          if (!scalarPresent(fm.data, 'created')) fail("missing frontmatter 'created' (YYYY-MM-DD of admission)");
+          if (!recurrencesOk(fm.data['recurrences'])) fail('recurrences must list ≥2 `<surface>: <anchor>` occurrences');
+        }
       } else if (store === 'rules') {
         if (!scalarPresent(fm.data, 'fires-when')) fail("missing frontmatter 'fires-when'");
         if (!('not-this' in fm.data)) fail("missing frontmatter 'not-this' (may be empty on a young rule, but the key is required)");
@@ -389,8 +402,11 @@ function fiveSlot(ctx: Ctx): RuleResult {
       } else {
         // beliefs
         for (const s of ['Claim', 'Falsifier']) if (!hasSection(fm.body, s)) fail(`missing section '## ${s}'`);
+        if (!scalarPresent(fm.data, 'consult-when')) fail("missing frontmatter 'consult-when'");
         if (!scalarPresent(fm.data, 'deadline')) fail("missing frontmatter 'deadline'");
-        if (!referenceOk(fm.data['reference'])) fail("missing frontmatter 'reference' (needs a class)");
+        if (!('postdiction' in fm.data)) fail("missing frontmatter 'postdiction'");
+        if (!referenceOk(fm.data['reference'])) fail("frontmatter 'reference' needs a non-empty class plus a price or categorical");
+        if (admitted && !scalarPresent(fm.data, 'created')) fail("missing frontmatter 'created' (YYYY-MM-DD of admission)");
         if (!admitted && scalarPresent(fm.data, 'verdict')) fail('a draft (no minted id) must carry an empty verdict');
       }
     }
@@ -398,16 +414,46 @@ function fiveSlot(ctx: Ctx): RuleResult {
   return ok(findings);
 }
 
-function arrayLen(value: unknown, min: number): boolean {
-  return Array.isArray(value) && value.length >= min;
+// Lifecycle status vocabularies per store (decisions/rules/beliefs SCHEMAs).
+const STATUS_VALUES: Record<string, readonly string[]> = {
+  decisions: ['active', 'superseded', 'moot'],
+  rules: ['active', 'demoted'],
+  beliefs: ['live', 'settled', 'superseded'],
+};
+
+function requireEnum(fail: (m: string) => void, data: Record<string, unknown>, key: string, allowed: readonly string[]): void {
+  const v = asString(data[key]);
+  if (v === '') fail(`missing frontmatter '${key}'`);
+  else if (!allowed.includes(v)) fail(`'${key}' is '${v}' — must be one of: ${allowed.join(' | ')}`);
 }
 
 function warrantOk(value: unknown): boolean {
   return Array.isArray(value) && value.length >= 2 && value.every((v) => /^D-\d+$/.test(asString(v)));
 }
 
+// Each recurrence is a non-empty `<surface>: <anchor>` map with a non-empty anchor —
+// counted and shape-checked only; whether the anchor resolves is review judgment.
+function recurrencesOk(value: unknown): boolean {
+  if (!Array.isArray(value) || value.length < 2) return false;
+  return value.every((item) => {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) return false;
+    const entries = Object.entries(item as Record<string, unknown>);
+    return entries.length >= 1 && entries.every(([, v]) => asString(v) !== '');
+  });
+}
+
+// A reference needs a non-empty class plus one departure form — a price reading or a
+// categorical state (beliefs/SCHEMA §reference). Presence and shape, never the number.
 function referenceOk(value: unknown): boolean {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) && 'class' in (value as object);
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const ref = value as Record<string, unknown>;
+  if (asString(ref['class']) === '') return false;
+  const has = (k: string): boolean => {
+    const v = ref[k];
+    if (v == null) return false;
+    return typeof v === 'object' ? Object.keys(v as object).length > 0 : asString(v) !== '';
+  };
+  return has('price') || has('categorical');
 }
 
 // R2b — tombstone on retire. A retired ledger entry carries its successor pointer, and a
@@ -443,12 +489,11 @@ function constitutionCap(ctx: Ctx): RuleResult {
     return ok([], [{ rule: 'constitution-cap', reason: `${CONSTITUTION_SKILL} absent (Track C not landed)` }]);
   }
   const text = read(ctx.root, CONSTITUTION_SKILL);
-  // An article/rule lead at line start: a heading, list bullet, or bold run. Distinct
-  // numbers are counted so a cross-reference ("see Article 3") mid-prose does not add.
-  // FLAG: the skill's article format is Track C's to author (ISO §3 says "10 rules",
-  // planning/constitution.md writes "**Article N —**"); this marker accepts either word
-  // and both styles — reconcile when the skill lands.
-  const re = /^\s*(?:#{1,6}\s*|[-*]\s+|\*\*)?(?:Article|Rule)\s+(\d+)\b/gim;
+  // An article/rule lead at line start carries a REQUIRED marker — a heading, list
+  // bullet, or bold run. The marker is what distinguishes an article heading from bare
+  // prose ("Article 11 is discussed below"), and distinct numbers are counted so a
+  // cross-reference ("see Article 3") never adds. Track C authors `## Article N — `.
+  const re = /^[ \t]*(?:#{1,6}[ \t]*|[-*][ \t]+|\*\*)(?:Article|Rule)\s+(\d+)\b/gim;
   const numbers = new Set<string>();
   for (const m of text.matchAll(re)) if (m[1] !== undefined) numbers.add(m[1]);
   if (numbers.size > CONSTITUTION_ARTICLE_CAP) {
@@ -632,16 +677,26 @@ function doDontPairing(ctx: Ctx): RuleResult {
     for (const m of text.matchAll(doRe)) seq.push({ kind: 'do', index: m.index ?? 0 });
     for (const m of text.matchAll(dontRe)) seq.push({ kind: 'dont', index: m.index ?? 0 });
     seq.sort((a, b) => a.index - b.index);
-    for (let i = 0; i < seq.length; i++) {
+    let broke = false;
+    for (let i = 0; i < seq.length && !broke; i++) {
       const entry = seq[i];
       if (entry === undefined) continue;
       const expected = i % 2 === 0 ? 'do' : 'dont';
       if (entry.kind !== expected) {
         findings.push({ rule: 'do-dont', file: relPath, line: lineAt(text, entry.index), severity: 'error', message: `unpaired Do/Don't — every **Do:** needs a sibling **Don't:** (LANGUAGE.md L3)` });
-        break;
+        broke = true;
+      } else if (expected === 'dont') {
+        // The Don't must sit in the same block as the Do it pairs with; a blank line
+        // between them means that Do's own sibling is missing and a distant Don't is
+        // standing in — which L3's per-directive requirement forbids.
+        const doMarker = seq[i - 1];
+        if (doMarker !== undefined && /\n[ \t]*\n/.test(text.slice(doMarker.index, entry.index))) {
+          findings.push({ rule: 'do-dont', file: relPath, line: lineAt(text, doMarker.index), severity: 'error', message: `a **Do:** and its **Don't:** must sit in the same block — a blank line separates them (LANGUAGE.md L3)` });
+          broke = true;
+        }
       }
     }
-    if (seq.length % 2 !== 0) {
+    if (!broke && seq.length % 2 !== 0) {
       const last = seq[seq.length - 1];
       findings.push({ rule: 'do-dont', file: relPath, line: last ? lineAt(text, last.index) : undefined, severity: 'error', message: `a Do or Don't is missing its sibling (LANGUAGE.md L3)` });
     }
@@ -680,12 +735,14 @@ function readmeKind(ctx: Ctx): RuleResult {
 // (LANGUAGE.md lexicon, ISO §7.5). Flags other() and unclosed other(.
 function escapesValid(ctx: Ctx): RuleResult {
   const findings: Finding[] = [];
-  const re = /\bother\(([^)]*)\)?/g;
+  // The closing paren must belong to this same token, on the same line — `[^)\n]*` keeps
+  // the match from spanning lines to an unrelated `)` later in the file.
+  const re = /\bother\(([^)\n]*)(\))?/g;
   for (const relPath of languageGovernedFiles(ctx.root)) {
     const text = stripCodeSpans(read(ctx.root, relPath));
     for (const m of text.matchAll(re)) {
       const inner = m[1] ?? '';
-      const closed = m[0].endsWith(')');
+      const closed = m[2] === ')';
       if (!closed) {
         findings.push({ rule: 'escapes', file: relPath, line: lineAt(text, m.index ?? 0), severity: 'error', message: 'unclosed escape — write other(<what>)' });
       } else if (inner.trim() === '') {
@@ -709,7 +766,12 @@ function checkSeam(ctx: Ctx): RuleResult {
   const termRe = new RegExp(`\\b(${terms.map(escapeRe).join('|')})\\b`, 'gi');
   for (const relPath of layerFiles(ctx.root)) {
     let text = read(ctx.root, relPath);
-    text = stripIndexRegions(text); // derived tenant summaries live here — exempt
+    // Only a store's own generated index host exempts that store's region — the derived
+    // tenant summaries there are legitimate. A fake marker pair dropped into any other
+    // layer file must NOT hide tenant text from the grep.
+    for (const store of INDEX_STORES) {
+      if (INDEX_TARGETS[store] === relPath) text = stripIndexRegion(text, store as StoreId);
+    }
     for (const m of text.matchAll(termRe)) {
       findings.push({ rule: 'check-seam', file: relPath, line: lineAt(text, m.index ?? 0), severity: 'error', message: `tenant term '${m[0]}' in a layer file — the reusable layer must carry no tenant knowledge (Art. 7)` });
     }
@@ -770,15 +832,14 @@ function walkMarkdownAndCode(dir: string, root: string, out: string[]): void {
   }
 }
 
-function stripIndexRegions(text: string): string {
-  let out = text;
-  for (const store of INDEX_STORES) {
-    const { begin, end } = markers(store as StoreId);
-    const b = out.indexOf(begin);
-    const e = out.indexOf(end);
-    if (b !== -1 && e !== -1 && e > b) out = out.slice(0, b) + out.slice(e + end.length);
-  }
-  return out;
+// Remove one store's generated index region (between its markers) — used only on that
+// store's own index host, so a marker pair elsewhere cannot exempt arbitrary text.
+function stripIndexRegion(text: string, store: StoreId): string {
+  const { begin, end } = markers(store);
+  const b = text.indexOf(begin);
+  const e = text.indexOf(end);
+  if (b !== -1 && e !== -1 && e > b) return text.slice(0, b) + text.slice(e + end.length);
+  return text;
 }
 
 function escapeRe(s: string): string {
