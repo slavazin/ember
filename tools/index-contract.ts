@@ -5,6 +5,8 @@
 // This module is pure — string in, string out, no filesystem access. The
 // drivers own file IO.
 
+import { load, FAILSAFE_SCHEMA } from 'js-yaml';
+
 export type StoreId = 'decisions' | 'rules' | 'beliefs';
 
 export const INDEX_STORES: readonly StoreId[] = ['decisions', 'rules', 'beliefs'];
@@ -86,25 +88,57 @@ export function renderIndexBlock(store: StoreId, records: IndexRecord[]): string
 // Replace the region between a store's markers in a SKILL.md. Throws when the
 // markers are absent or malformed — never a silent skip.
 export function spliceIndexBlock(skillText: string, store: StoreId, block: string): string {
-  const { begin, end } = markers(store);
-  const beginIdx = skillText.indexOf(begin);
-  const endIdx = skillText.indexOf(end);
-  if (beginIdx === -1 || endIdx === -1 || endIdx < beginIdx) {
-    throw new Error(`spliceIndexBlock(${store}): markers missing or malformed in SKILL.md`);
-  }
-  const head = skillText.slice(0, beginIdx + begin.length);
-  const tail = skillText.slice(endIdx);
+  const span = locateMarkers(skillText, store);
+  const head = skillText.slice(0, span.begin.end);
+  const tail = skillText.slice(span.end.start);
   return `${head}\n${block}${tail}`;
 }
 
 // Is this SKILL.md's region already current for these records? Throws when the
 // markers are absent.
 export function isBlockCurrent(skillText: string, store: StoreId, records: IndexRecord[]): boolean {
-  const { begin, end } = markers(store);
-  if (!skillText.includes(begin) || !skillText.includes(end)) {
-    throw new Error(`isBlockCurrent(${store}): markers missing in SKILL.md`);
-  }
+  locateMarkers(skillText, store);
   return spliceIndexBlock(skillText, store, renderIndexBlock(store, records)) === skillText;
+}
+
+interface LineSpan {
+  start: number;
+  end: number;
+}
+
+// Exactly one line-delimited begin marker and one end marker, in order. More
+// than one of either, a marker embedded mid-line, or an end before its begin is
+// a malformed shell — a hard failure, per the contract.
+function locateMarkers(skillText: string, store: StoreId): { begin: LineSpan; end: LineSpan } {
+  const { begin, end } = markers(store);
+  const beginHits = fullLineSpans(skillText, begin);
+  const endHits = fullLineSpans(skillText, end);
+  if (beginHits.length !== 1 || endHits.length !== 1) {
+    throw new Error(
+      `locateMarkers(${store}): markers missing or malformed — found ` +
+        `${beginHits.length} begin and ${endHits.length} end marker line(s), expected 1 each`,
+    );
+  }
+  const beginSpan = beginHits[0];
+  const endSpan = endHits[0];
+  if (beginSpan === undefined || endSpan === undefined) {
+    throw new Error(`locateMarkers(${store}): markers missing or malformed`);
+  }
+  if (endSpan.start < beginSpan.end) {
+    throw new Error(`locateMarkers(${store}): end marker precedes begin marker`);
+  }
+  return { begin: beginSpan, end: endSpan };
+}
+
+// Character spans of every line that equals the marker exactly (LF-delimited).
+function fullLineSpans(text: string, marker: string): LineSpan[] {
+  const spans: LineSpan[] = [];
+  let offset = 0;
+  for (const line of text.split('\n')) {
+    if (line === marker) spans.push({ start: offset, end: offset + line.length });
+    offset += line.length + 1;
+  }
+  return spans;
 }
 
 function renderLine(store: StoreId, r: IndexRecord): string {
@@ -164,24 +198,29 @@ function idNum(id: string): number {
   return m && m[1] ? Number.parseInt(m[1], 10) : 0;
 }
 
-// Top-level scalar keys of the YAML frontmatter block. Indented lines (list
-// items, nested keys) are skipped — the index needs no array field.
+// The YAML frontmatter block, read with a string-only schema: every scalar
+// stays a string (no timestamp or boolean coercion), and comments, quotes, and
+// escapes are decoded by the parser. Array and map fields (recurrences,
+// reference, watches) are not index fields, so they are skipped.
 function parseFrontmatter(text: string): Record<string, string> {
   const out: Record<string, string> = {};
   const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
   if (!m || !m[1]) return out;
-  for (const line of m[1].split(/\r?\n/)) {
-    const kv = /^([A-Za-z][\w-]*):\s?(.*)$/.exec(line);
-    if (!kv || !kv[1]) continue;
-    let value = (kv[2] ?? '').trim();
-    if (
-      value.length >= 2 &&
-      ((value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'")))
-    ) {
-      value = value.slice(1, -1);
+  let doc: unknown;
+  try {
+    doc = load(m[1], { schema: FAILSAFE_SCHEMA });
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    throw new Error(`invalid YAML frontmatter: ${detail}`);
+  }
+  if (doc === null || typeof doc !== 'object') return out;
+  for (const [key, value] of Object.entries(doc as Record<string, unknown>)) {
+    if (value === null || value === undefined) {
+      out[key] = '';
+    } else if (typeof value === 'string') {
+      out[key] = value.trim();
     }
-    out[kv[1]] = value;
+    // arrays and nested maps are not index fields — skip them
   }
   return out;
 }

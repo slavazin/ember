@@ -68,9 +68,9 @@ edit inside the region is a defect the verifier catches on the next run.
 - **The marker lines are fixed constants**, one pair per `StoreId`. The
   producer matches them verbatim and rewrites only the lines strictly between
   them; the marker lines themselves are never regenerated.
-- **A target `SKILL.md` MUST contain its store's marker pair.** Markers absent
-  or malformed is a verifier failure (a shell was authored without its region),
-  never a silent skip.
+- **A target `SKILL.md` MUST contain its store's marker pair — exactly one,
+  each on its own line.** Markers absent, duplicated, mid-line, or out of order
+  is malformed: a verifier failure, never a silent skip.
 - **An empty store renders an empty region**: the two marker lines adjacent,
   nothing between them.
 
@@ -85,10 +85,12 @@ edit inside the region is a defect the verifier catches on the next run.
 ## Per-store index grammar
 
 One `- ` list line per entry, fields joined by the module constant `FIELD_SEP`
-(` · `). Field values are taken verbatim from the entry (frontmatter scalar or
-the `# ` title), trimmed of surrounding whitespace, single-line. A value
-containing `FIELD_SEP` makes the producer throw — it never silently corrupts a
-line. An absent optional value renders `(none)`.
+(` · `). Field values are taken verbatim from the entry (a frontmatter YAML
+scalar or the `# ` title), trimmed of surrounding whitespace, single-line —
+inline comments and quotes are decoded by the YAML parser, and block/folded
+scalars are not index fields. A value containing `FIELD_SEP` makes the producer
+throw — it never silently corrupts a line. An absent optional value renders
+`(none)`.
 
 ### decisions → `cases`
 

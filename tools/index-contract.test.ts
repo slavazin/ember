@@ -169,8 +169,53 @@ test('a stale region is not current', () => {
 });
 
 test('missing markers are a hard failure, never a silent skip', () => {
-  assert.throws(() => isBlockCurrent('no markers here', 'decisions', []), /markers missing/);
+  assert.throws(() => isBlockCurrent('no markers here', 'decisions', []), /missing or malformed/);
   assert.throws(() => spliceIndexBlock('no markers here', 'decisions', ''), /missing or malformed/);
+});
+
+test('a duplicated marker pair is malformed, not a silent single splice', () => {
+  const { begin, end } = markers('decisions');
+  const doubled = [begin, '- x', end, '', begin, '- y', end, ''].join('\n');
+  assert.throws(() => spliceIndexBlock(doubled, 'decisions', ''), /missing or malformed/);
+  assert.throws(() => isBlockCurrent(doubled, 'decisions', []), /missing or malformed/);
+});
+
+test('a marker embedded mid-line is not a valid region', () => {
+  const inline = `prose ${markers('decisions').begin} more\n${markers('decisions').end}\n`;
+  assert.throws(() => spliceIndexBlock(inline, 'decisions', ''), /missing or malformed/);
+});
+
+test('parseEntry decodes YAML: inline comments and quotes do not leak into fields', () => {
+  const belief = `---
+id: B-0009
+status: live  # live | settled | superseded
+consult-when: "estimating datastore burst capacity"
+deadline: 2026-09-01  # the date the world speaks
+postdiction: true  # true iff deadline < created
+---
+
+# a priced belief
+`;
+  const r = parseEntry('beliefs', belief);
+  assert.equal(r.status, 'live');
+  assert.equal(r['consult-when'], 'estimating datastore burst capacity');
+  assert.equal(r['deadline'], '2026-09-01');
+  assert.equal(r['postdiction'], 'true');
+  assert.ok(renderIndexBlock('beliefs', [r]).includes('[postdiction]'));
+});
+
+test('an inline comment on status does not break status detection', () => {
+  const decision = `---
+id: D-0003
+status: superseded  # active | superseded | moot
+superseded-by: D-0007
+---
+
+# a superseded case
+`;
+  const r = parseEntry('decisions', decision);
+  assert.equal(r.status, 'superseded');
+  assert.ok(renderIndexBlock('decisions', [r]).includes('superseded → D-0007'));
 });
 
 test('every index target names a store and a skill path', () => {
