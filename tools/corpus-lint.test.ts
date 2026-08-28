@@ -4,8 +4,9 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
-import { lint, CONSTITUTION_ARTICLE_CAP, CONSTITUTION_SKILL, type Finding } from './corpus-lint.ts';
+import { lint, rel, CONSTITUTION_ARTICLE_CAP, CONSTITUTION_SKILL, type Finding } from './corpus-lint.ts';
 import { markers, parseEntry, renderIndexBlock, spliceIndexBlock } from './index-contract.ts';
 
 // ── fixtures ──
@@ -648,12 +649,104 @@ test('do-dont: a Do and Don\'t split by a blank line are not a valid pair', () =
   );
 });
 
+// rel() must return a '/'-separated repo-relative path from either OS separator — a
+// '/'-only strip left the root in place on Windows (join yields '\'), doubling the path
+// and ENOENT-ing every file read. Locked here so the fix holds without the Windows CI leg
+// (platform-assumption; the leg surfaced it, this test pins it on every platform).
+test('rel: strips the root and normalizes separators (POSIX, Windows, and mixed)', () => {
+  assert.equal(rel('/tmp/x', '/tmp/x/corpus/decisions/D-0007.md'), 'corpus/decisions/D-0007.md');
+  assert.equal(rel('C:\\Temp\\x', 'C:\\Temp\\x\\corpus\\decisions\\D-0007.md'), 'corpus/decisions/D-0007.md');
+  assert.equal(rel('C:/Users/x/ember', 'C:\\Users\\x\\ember\\corpus\\LANGUAGE.md'), 'corpus/LANGUAGE.md');
+  assert.equal(rel('/tmp/x/', '/tmp/x/corpus/README.md'), 'corpus/README.md'); // trailing-slash root
+});
+
+// ── refs-resolve (BS-0010, dangling-reference) ──
+
+test('refs-resolve: an absolute markdown link to a missing file is an error', () => {
+  withCorpus({ 'skills/x/SKILL.md': '# x\n\nOpen [the tables](/corpus/latches/planning.md) first.\n' }, (root) =>
+    assert.ok(errors(run(root, 'refs-resolve')).some((f) => /planning\.md/.test(f.message))),
+  );
+});
+
+test('refs-resolve: a bare code-span layer path to a missing file is an error', () => {
+  withCorpus({ 'skills/x/SKILL.md': '# x\n\nPoll each row of `corpus/latches/closing.md`.\n' }, (root) =>
+    assert.ok(errors(run(root, 'refs-resolve')).some((f) => /closing\.md/.test(f.message))),
+  );
+});
+
+test('refs-resolve: references that resolve pass', () => {
+  withCorpus(
+    {
+      'skills/x/SKILL.md': '# x\n\nSee [readme](/corpus/README.md) then `corpus/latches/planning.md`.\n',
+      'corpus/README.md': '# r\n',
+      'corpus/latches/planning.md': '| fires-when | consult | owed act |\n',
+    },
+    (root) => assert.deepEqual(errors(run(root, 'refs-resolve')), []),
+  );
+});
+
+test('refs-resolve: a reference to a tool protocol under tools/*.md is checked', () => {
+  withCorpus({ 'tools/INDEX-CONTRACT.md': '# contract\n\nImports [the module](/tools/index-contract.ts).\n' }, (root) =>
+    assert.ok(errors(run(root, 'refs-resolve')).some((f) => /index-contract\.ts/.test(f.message))),
+  );
+});
+
+test('refs-resolve: a reference climbing out of the repo (..) is an error, not an environment probe', () => {
+  withCorpus({ 'skills/x/SKILL.md': '# x\n\nSee [outside](/../secret.md) and `corpus/../etc/passwd.md`.\n' }, (root) => {
+    const errs = errors(run(root, 'refs-resolve'));
+    assert.ok(errs.some((f) => /escapes the repository/.test(f.message)), 'expected a repo-escape error');
+    assert.equal(errs.length, 2, 'both traversal references flagged');
+  });
+});
+
+test('refs-resolve: entry-file placeholders and fenced examples are exempt', () => {
+  withCorpus(
+    {
+      // `…-nnnn.md` is a stand-in, not a file; the dangling link inside a fence is illustrative.
+      'skills/x/SKILL.md': '# x\n\nName it `corpus/decisions/D-nnnn.md`.\n\n```\n[nope](/corpus/gone.md)\n```\n',
+    },
+    (root) => assert.deepEqual(errors(run(root, 'refs-resolve')), []),
+  );
+});
+
 // ── the whole real repo is green today (locks the today-green guarantee) ──
 
 test('the real repo passes with zero errors (only disclosed skips)', () => {
-  const root = join(dirname(new URL(import.meta.url).pathname), '..');
+  const root = join(dirname(fileURLToPath(import.meta.url)), '..'); // fileURLToPath, not .pathname: on Windows .pathname is /C:/… and breaks path APIs
   if (!existsSync(join(root, 'corpus'))) return; // not running from the repo
   const { findings } = lint({ root });
   const errs = errors(findings);
   assert.equal(errs.length, 0, 'unexpected errors: ' + JSON.stringify(errs, null, 2));
+});
+
+// A scanner must never flag the code that defines or exercises the pattern it hunts — the
+// self-match class (BS-0004 on LANGUAGE.md's tell tables, BS-0022 on a seam test's fixtures).
+// Every rule walks the real repo here; a future rule that reaches into *.test.ts (where
+// fixtures legitimately carry the patterns) trips this guard instead of the CI gate.
+test('no rule flags a *.test.ts fixture surface (self-match class guard: BS-0004, BS-0022)', () => {
+  const root = join(dirname(fileURLToPath(import.meta.url)), '..'); // fileURLToPath, not .pathname: on Windows .pathname is /C:/… and breaks path APIs
+  if (!existsSync(join(root, 'corpus'))) return;
+  const { findings } = lint({ root });
+  const selfFlagged = findings.filter((f) => f.file.endsWith('.test.ts'));
+  assert.deepEqual(selfFlagged, [], 'a scanner walked its own test surface: ' + JSON.stringify(selfFlagged));
+});
+
+// BS-0023 (self-referential-baseline): when the base resolves to HEAD and the working tree is
+// clean, frozenPath would compare every frozen entry to itself and pass vacuously — the exact
+// push-to-main exposure. It must disclose a skip instead. (A dirty working tree against
+// base==HEAD is the normal local flow and still runs — the frozen-path edit tests above cover
+// that path.) Tool-level backstop to CI pinning the pre-change base per event.
+test('frozen-path: base==HEAD with a clean tree is a disclosed skip, not a vacuous pass (BS-0023)', () => {
+  withGitRepo(
+    { 'corpus/decisions/D-0001.md': DECISION },
+    () => {}, // no mutation — the working tree matches HEAD, and base 'main' resolves to HEAD
+    (root) => {
+      const { findings, skips } = lint({ root, baseRef: 'main' }, ['frozen-path']);
+      assert.deepEqual(errors(findings), [], 'frozen-path must not report errors when it cannot compare');
+      assert.ok(
+        skips.some((s) => s.rule === 'frozen-path' && /equals HEAD/.test(s.reason)),
+        'expected a frozen-path self-compare skip',
+      );
+    },
+  );
 });
