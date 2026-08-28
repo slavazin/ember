@@ -404,7 +404,7 @@ function fiveSlot(ctx: Ctx): RuleResult {
         for (const s of ['Claim', 'Falsifier']) if (!hasSection(fm.body, s)) fail(`missing section '## ${s}'`);
         if (!scalarPresent(fm.data, 'consult-when')) fail("missing frontmatter 'consult-when'");
         if (!scalarPresent(fm.data, 'deadline')) fail("missing frontmatter 'deadline'");
-        if (!('postdiction' in fm.data)) fail("missing frontmatter 'postdiction'");
+        requireEnum(fail, fm.data, 'postdiction', ['true', 'false']);
         if (!referenceOk(fm.data['reference'])) fail("frontmatter 'reference' needs a non-empty class plus a price or categorical");
         if (admitted && !scalarPresent(fm.data, 'created')) fail("missing frontmatter 'created' (YYYY-MM-DD of admission)");
         if (!admitted && scalarPresent(fm.data, 'verdict')) fail('a draft (no minted id) must carry an empty verdict');
@@ -436,24 +436,35 @@ function warrantOk(value: unknown): boolean {
 function recurrencesOk(value: unknown): boolean {
   if (!Array.isArray(value) || value.length < 2) return false;
   return value.every((item) => {
-    if (typeof item !== 'object' || item === null || Array.isArray(item)) return false;
+    if (!isPlainObject(item)) return false;
     const entries = Object.entries(item as Record<string, unknown>);
-    return entries.length >= 1 && entries.every(([, v]) => asString(v) !== '');
+    // Exactly one `<surface>: <anchor>` mapping, both halves non-empty.
+    return entries.length === 1 && entries.every(([k, v]) => k.trim() !== '' && asString(v) !== '');
   });
 }
 
-// A reference needs a non-empty class plus one departure form — a price reading or a
-// categorical state (beliefs/SCHEMA §reference). Presence and shape, never the number.
+// A reference needs a non-empty class plus one departure form — a `{value, source, as-of}`
+// price map (scalar fields) or a scalar categorical state (beliefs/SCHEMA §reference).
+// Presence and shape only; the number's truth is never judged.
 function referenceOk(value: unknown): boolean {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  if (!isPlainObject(value)) return false;
   const ref = value as Record<string, unknown>;
   if (asString(ref['class']) === '') return false;
-  const has = (k: string): boolean => {
-    const v = ref[k];
-    if (v == null) return false;
-    return typeof v === 'object' ? Object.keys(v as object).length > 0 : asString(v) !== '';
-  };
-  return has('price') || has('categorical');
+  return priceMapOk(ref['price']) || scalarNonEmpty(ref['categorical']);
+}
+
+function isPlainObject(v: unknown): boolean {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+function scalarNonEmpty(v: unknown): boolean {
+  return v != null && typeof v !== 'object' && asString(v) !== '';
+}
+
+function priceMapOk(v: unknown): boolean {
+  if (!isPlainObject(v)) return false;
+  const p = v as Record<string, unknown>;
+  return ['value', 'source', 'as-of'].every((k) => scalarNonEmpty(p[k]));
 }
 
 // R2b — tombstone on retire. A retired ledger entry carries its successor pointer, and a

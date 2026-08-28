@@ -584,6 +584,32 @@ test('five-slot: a belief reference needs a non-empty class plus price or catego
   withCorpus({ 'corpus/beliefs/B-0001.md': categorical }, (root) => assert.equal(errors(run(root, 'five-slot')).length, 0));
 });
 
+test('five-slot: a recurrence with an empty surface key is rejected', () => {
+  const bad = DECISION.replace(/recurrences:\n(  - .*\n)+/, "recurrences:\n  - '': S-003\n  - worker: S-005\n");
+  withCorpus({ 'corpus/decisions/D-0007.md': bad }, (root) =>
+    assert.ok(errors(run(root, 'five-slot')).some((f) => /recurrences/.test(f.message))),
+  );
+});
+
+test('five-slot: postdiction must be a boolean, not arbitrary text', () => {
+  withCorpus({ 'corpus/beliefs/B-0001.md': BELIEF.replace('postdiction: false', 'postdiction: nonsense') }, (root) =>
+    assert.ok(errors(run(root, 'five-slot')).some((f) => /postdiction.*must be one of/.test(f.message))),
+  );
+  withCorpus({ 'corpus/beliefs/B-0001.md': BELIEF.replace('postdiction: false', 'postdiction: true') }, (root) =>
+    assert.ok(!errors(run(root, 'five-slot')).some((f) => /postdiction/.test(f.message))),
+  );
+});
+
+test('five-slot: a belief reference must be a proper price map or scalar categorical', () => {
+  for (const c of ['price: [foo]', 'price: {foo: bar}', 'categorical: {x: y}']) {
+    const bad = BELIEF.replace(/reference:\n(  .*\n)+/, `reference:\n  class: base-rate\n  ${c}\n`);
+    withCorpus({ 'corpus/beliefs/B-0001.md': bad }, (root) =>
+      assert.ok(errors(run(root, 'five-slot')).some((f) => /reference/.test(f.message)), `expected a reference finding for "${c}"`),
+    );
+  }
+  withCorpus({ 'corpus/beliefs/B-0001.md': BELIEF }, (root) => assert.equal(errors(run(root, 'five-slot')).length, 0));
+});
+
 test('check-seam: a fake index-marker region only exempts the store\'s own host, not other layer files', () => {
   const fake = [markers('decisions').begin, 'this role secretly mentions pool-exhaustion', markers('decisions').end, ''].join('\n');
   withCorpus({ 'scenarios/pool-exhaustion-a/x.txt': '', 'roles/recon.md': fake }, (root) =>
