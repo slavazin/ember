@@ -33,32 +33,28 @@ import {
   type StoreId,
   type IndexRecord,
 } from './index-contract.ts';
+import { layerEntryFiles } from './store-discovery.ts';
 
-// A store's entry directory, relative to the repo root — the form used in messages.
-function storeDirRel(store: StoreId): string {
-  return `corpus/${store}`;
-}
-
-// Entry-file names in a store, sorted lexically. Discovery matches the canonical admitted
-// entry filename — the store prefix and the zero-padded four-digit id each SCHEMA fixes
-// (`^D-\d{4}\.md$`) — the identical rule the verifier applies, so producer and verifier
-// resolve the same set and their indexes cannot drift. `README.md`, `SCHEMA.md`, and
-// pre-admission drafts (which carry no minted id) fall outside it; a file matching the
-// shape but lacking an `id` in frontmatter is caught loudly by parseEntry, never silently
-// indexed. The module sorts records by id at render time, so the written bytes are stable
-// regardless of directory-read order; the lexical pre-sort keeps iteration and error
-// reporting deterministic.
+// Admitted-entry paths for a store, repo-relative, across every corpus root the layer contract
+// governs: the root scaffold `corpus/<store>/` plus each incident-tenant entry dir
+// (`tenant-*/corpus/<store>/`). Discovery matches the canonical admitted filename — the store
+// prefix and the zero-padded four-digit id each SCHEMA fixes (`^D-\d{4}\.md$`) — through the
+// shared store-discovery + index-contract predicates, the identical rule the verifier applies,
+// so producer and verifier resolve the same set and their indexes cannot drift. `README.md`,
+// `SCHEMA.md`, and pre-admission drafts (no minted id) fall outside it; a file matching the
+// shape but lacking an `id` is caught loudly by parseEntry, never silently indexed. The root
+// scaffold dir must exist — its absence is a named error, not a silent empty store — while a
+// tenant dir is optional (the incident tenant seeds its entries in-window). Records are sorted
+// by id at render time, so written bytes are stable regardless of read order.
 export function discoverEntryFiles(root: string, store: StoreId): string[] {
-  const relDir = storeDirRel(store);
-  let names: string[];
+  const scaffold = `corpus/${store}`;
   try {
-    names = readdirSync(join(root, relDir));
+    readdirSync(join(root, scaffold));
   } catch (e) {
-    if (errCode(e) === 'ENOENT') throw new Error(`store directory not found: ${relDir}`);
-    throw new Error(`cannot read store directory ${relDir}: ${detail(e)}`);
+    if (errCode(e) === 'ENOENT') throw new Error(`store directory not found: ${scaffold}`);
+    throw new Error(`cannot read store directory ${scaffold}: ${detail(e)}`);
   }
-  // The one canonical rule, shared with the verifier through the module — never re-derived here.
-  return names.filter((name) => isEntryFile(store, name)).sort();
+  return layerEntryFiles(root, store).filter((path) => isEntryFile(store, basename(path)));
 }
 
 // Read and parse every entry file in a store into the records the index needs.
@@ -67,18 +63,17 @@ export function discoverEntryFiles(root: string, store: StoreId): string[] {
 // hard error naming the file — never a silent skip. A verifier reuses this to read the
 // entries the same way index-gen does, rather than duplicating the discovery.
 export function collectRecords(root: string, store: StoreId): IndexRecord[] {
-  return discoverEntryFiles(root, store).map((name) => {
-    const rel = `${storeDirRel(store)}/${name}`;
+  return discoverEntryFiles(root, store).map((relPath) => {
     let text: string;
     try {
-      text = readFileSync(join(root, storeDirRel(store), name), 'utf8');
+      text = readFileSync(join(root, relPath), 'utf8');
     } catch (e) {
-      throw new Error(`cannot read ${rel}: ${detail(e)}`);
+      throw new Error(`cannot read ${relPath}: ${detail(e)}`);
     }
     try {
       return parseEntry(store, text);
     } catch (e) {
-      throw new Error(`${rel}: ${detail(e)}`);
+      throw new Error(`${relPath}: ${detail(e)}`);
     }
   });
 }

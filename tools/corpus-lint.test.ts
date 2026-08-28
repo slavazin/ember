@@ -101,6 +101,37 @@ The datastore sustains 50 concurrent connections.
 - manual: a human checks the connection ceiling at the next incident.
 `;
 
+// A build ADR (tenant-build's self-describing store — its own ADR contract, not the layer's
+// D- contract). Paired with a SCHEMA.md marker so discovery treats the store as self-describing.
+const ADR = `---
+id: ADR-0001
+status: accepted
+scopes: [tools/]
+related: []
+decided: 2026-08-28
+---
+
+# the corpus tooling runs directly under tsx with no build step
+
+## Context
+The layer tooling is TypeScript read by the same repository that hosts the corpus.
+
+## Decision
+The tooling runs directly under tsx; the checked-in source is the only artifact.
+
+## Consequences
+Enables editing a tool and re-running it in one step.
+
+## Warrant
+- False if: a runtime the corpus must support cannot execute TypeScript through a loader.
+`;
+
+// The two standing files that make tenant-build/corpus/decisions a self-describing store.
+const ADR_STORE_STANDING = {
+  'tenant-build/corpus/decisions/README.md': '# build ADR store\n\n**Kind:** ledger\n',
+  'tenant-build/corpus/decisions/SCHEMA.md': '# SCHEMA — build ADR entry\n',
+};
+
 // ── R1 index-current ──
 
 function emptyShell(store: 'decisions' | 'rules' | 'beliefs'): string {
@@ -409,6 +440,93 @@ test('frozen-path: an unresolvable base ref is a loud skip, not a false pass', (
     assert.equal(res.skips.length, 1);
     assert.match(res.skips[0]!.reason, /UNCHECKED/);
   });
+});
+
+// ── build ADR store wiring (Part A: tenant-build/) ──
+
+const ADR_BASE = { ...ADR_STORE_STANDING, 'tenant-build/corpus/decisions/ADR-0001.md': ADR };
+
+test('frozen-path: the build ADR store is frozen on ITS OWN contract — a body edit fails', () => {
+  withGitRepo(
+    ADR_BASE,
+    (root) => writeFileSync(join(root, 'tenant-build/corpus/decisions/ADR-0001.md'), ADR.replace('runs directly under tsx; the', 'runs some other way; the')),
+    (root) => {
+      const errs = errors(run(root, 'frozen-path'));
+      assert.ok(errs.some((f) => f.file === 'tenant-build/corpus/decisions/ADR-0001.md' && /frozen body/.test(f.message)), JSON.stringify(errs));
+    },
+  );
+});
+
+test('frozen-path: an ADR status flip to superseded is sanctioned; a frozen field edit fails', () => {
+  withGitRepo(
+    ADR_BASE,
+    (root) => writeFileSync(join(root, 'tenant-build/corpus/decisions/ADR-0001.md'), ADR.replace('status: accepted', 'status: superseded\nsuperseded-by: ADR-0009')),
+    (root) => assert.equal(errors(run(root, 'frozen-path')).length, 0),
+  );
+  withGitRepo(
+    ADR_BASE,
+    (root) => writeFileSync(join(root, 'tenant-build/corpus/decisions/ADR-0001.md'), ADR.replace('decided: 2026-08-28', 'decided: 2026-08-29')),
+    (root) => assert.match(errors(run(root, 'frozen-path'))[0]!.message, /frozen frontmatter/),
+  );
+});
+
+test('frozen-path: an ADR convergence (multiline converged-into list) is sanctioned', () => {
+  // converged-into is a list mutable key: its indented items must be droppable, or a legitimate
+  // convergence would read as a frozen-frontmatter edit (the block-aware mutable filter).
+  withGitRepo(
+    ADR_BASE,
+    (root) =>
+      writeFileSync(
+        join(root, 'tenant-build/corpus/decisions/ADR-0001.md'),
+        ADR.replace('status: accepted', 'status: converged\nconverged-into:\n  - ADR-0009'),
+      ),
+    (root) => assert.equal(errors(run(root, 'frozen-path')).length, 0),
+  );
+});
+
+test('decision 4: a self-describing tenant store (own SCHEMA) is NOT held to the layer entry contract', () => {
+  // ADR-0001.md would fail the layer decisions five-slot (no D- id, no ## Revisit, no recurrences).
+  // Because tenant-build ships its own SCHEMA, discovery excludes it from the layer entry checks —
+  // its own `adr check` owns it. Forcing the layer contract onto it is the BS-0012 mistake.
+  withCorpus({ ...ADR_BASE }, (root) => {
+    const relevant = errors(run(root, 'five-slot')).filter((f) => f.file.startsWith('tenant-build/'));
+    assert.deepEqual(relevant, [], JSON.stringify(relevant));
+  });
+});
+
+test('banned-tell: extends to the build ADR store and tenant-incident prose, but not fixtures', () => {
+  withCorpus(
+    {
+      'tenant-build/corpus/decisions/ADR-0001.md': ADR.replace('## Context', '## Context\nWe decided to trace it.'),
+      'tenant-incident/scenarios/x/README.md': 'The pool saturates for now.\n',
+      'tenant-incident/scenarios/x/fixtures/report.md': 'We decided this at the moment.\n', // a fixture — excluded
+    },
+    (root) => {
+      const errs = errors(run(root, 'banned-tell'));
+      assert.ok(errs.some((f) => f.file === 'tenant-build/corpus/decisions/ADR-0001.md'), 'ADR prose scanned');
+      assert.ok(errs.some((f) => f.file === 'tenant-incident/scenarios/x/README.md'), 'tenant prose scanned');
+      assert.ok(!errs.some((f) => f.file.includes('/fixtures/')), 'fixtures excluded: ' + JSON.stringify(errs));
+    },
+  );
+});
+
+test('check-seam: tenant-build is exempt — its files are not layer, and it seeds no tenant vocabulary', () => {
+  withCorpus(
+    {
+      // a derivable tenant term (scenario base name)
+      'tenant-incident/scenarios/pool-exhaustion-a/x.txt': '',
+      // tenant-build legitimately names the tenant term (its subject includes the tenant surface) and a layer term
+      'tenant-build/corpus/decisions/ADR-0001.md': ADR.replace('## Context', '## Context\nGoverns pool-exhaustion handling and corpus-lint.'),
+      ...ADR_STORE_STANDING,
+      // a real layer file naming the same tenant term IS a leak
+      'tools/leak.md': 'the pool-exhaustion class is handled here',
+    },
+    (root) => {
+      const errs = errors(run(root, 'check-seam'));
+      assert.ok(!errs.some((f) => f.file.startsWith('tenant-build/')), 'tenant-build must not be scanned as a layer file: ' + JSON.stringify(errs));
+      assert.ok(errs.some((f) => f.file === 'tools/leak.md'), 'a genuine layer leak must still fire');
+    },
+  );
 });
 
 // ── R5 no-duty-language ──

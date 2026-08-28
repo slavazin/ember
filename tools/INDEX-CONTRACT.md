@@ -200,6 +200,19 @@ export function isBlockCurrent(skillText: string, store: StoreId, records: Index
   markers are present and `isBlockCurrent` holds for every target — importing
   these functions, never duplicating them.
 
+**Where the entries live** is resolved by one more shared module,
+`tools/store-discovery.ts` — the impure filesystem companion to this pure
+contract. A store's entries are discovered across every corpus root by
+convention: the layer scaffold `corpus/<store>/`, plus each incident-tenant
+entry dir `tenant-*/corpus/<store>/` that co-references the layer SCHEMA. Both
+drivers import `layerEntryFiles` from it, so producer and verifier scan the same
+directories, not two hand-kept path lists. A tenant store that ships its **own**
+`SCHEMA.md` (the build ADR store, `tenant-build/corpus/decisions/`) is
+self-describing — its own validator owns its contract, and it is excluded from
+this layer-contract discovery. That store keeps **no** generated index: its
+reader is an on-demand projector (`npm run adr`), not a committed region, so it
+is not a `StoreId` here.
+
 The concrete runner (tsx/node), package manager, and test tool are
 implementation choices; this contract fixes only the importable surface above.
 

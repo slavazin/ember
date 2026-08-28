@@ -129,7 +129,24 @@ test('discoverEntryFiles matches only the canonical four-digit id shape, ignorin
     writeEntry(root, 'decisions', 'notes.md', '# not an entry\n');
     writeEntry(root, 'decisions', 'D-1.md', D0007); // non-canonical: fewer than four digits
     writeEntry(root, 'decisions', 'D-00001.md', D0007); // non-canonical: more than four digits
-    assert.deepEqual(discoverEntryFiles(root, 'decisions'), ['D-0003.md', 'D-0007.md']);
+    assert.deepEqual(discoverEntryFiles(root, 'decisions'), ['corpus/decisions/D-0003.md', 'corpus/decisions/D-0007.md']);
+  });
+});
+
+test('discovery spans corpus roots: an incident-tenant entry is indexed alongside the root scaffold (Part B)', () => {
+  withRepo((root) => {
+    writeEntry(root, 'decisions', 'D-0003.md', D0003); // at the root scaffold
+    const tenantDir = join(root, 'tenant-incident', 'corpus', 'decisions');
+    mkdirSync(tenantDir, { recursive: true });
+    writeFileSync(join(tenantDir, 'D-0007.md'), D0007); // under the incident tenant — no local SCHEMA
+    assert.deepEqual(discoverEntryFiles(root, 'decisions'), [
+      'corpus/decisions/D-0003.md',
+      'tenant-incident/corpus/decisions/D-0007.md',
+    ]);
+    const outcome = processStore(root, 'decisions', false);
+    assert.equal(outcome.kind, 'written');
+    const target = readTarget(root, 'decisions');
+    assert.ok(target.includes('- D-0003') && target.includes('- D-0007'), 'both roots reach one index');
   });
 });
 

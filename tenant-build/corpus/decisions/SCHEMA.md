@@ -109,8 +109,8 @@ is the safe failure — omit `scopes` rather than guess a path.
 **Don't:** don't anchor to `planning/` or narrate the deliberation; an inward path
 resolves nowhere, and process narration is not a warrant.
 
-**Do:** supersede a reversed decision — a new ADR that names the old one, and the old
-one flipped to `superseded` with a pointer back.
+**Do:** supersede a reversed decision — a successor ADR that names the prior one, and the
+prior one flipped to `superseded` with a pointer back.
 **Don't:** don't edit a frozen entry to correct its design; the reversed decision is
 evidence, and overwriting it destroys the record the store exists to keep.
 

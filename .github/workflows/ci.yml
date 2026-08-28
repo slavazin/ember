@@ -32,6 +32,11 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run gen:check # generated store indexes match a fresh render (index-gen --check)
+      # The build ADR store (tenant-build/) is self-describing: its own validator gates the ADR
+      # entry contract (id==filename, required sections, the supersession pair's reciprocity),
+      # keyed off its own SCHEMA. corpus-lint adds only frozen-path immutability and LANGUAGE
+      # prose over that store — it does not re-derive the ADR contract (decision 4 / BS-0012).
+      - run: npm run adr:check # build ADR store: shape + cross-entry reciprocity (adr check)
       # Frozen-path must diff against the state BEFORE the change, not HEAD against itself. On a
       # PR that base is the PR base; on a push to main it is the pre-push commit. corpus-lint's
       # default (merge-base with origin/main) collapses to HEAD on push-to-main, so pass the base
