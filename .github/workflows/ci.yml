@@ -1,0 +1,27 @@
+name: CI
+
+# The review-seam (Constitution Art. 10): every push to main and every pull request runs
+# the whole toolchain over the integrated tree — the check no single track branch can run
+# in isolation (it is exactly this gap that let a layer/tenant seam bug reach main).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history; lets corpus-lint frozen-path compare against a base ref
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run gen:check # generated store indexes match a fresh render (index-gen --check)
+      - run: npm run lint # entry contract, constitution cap, frozen paths, layer/tenant seam
+      # frozen-path stays a disclosed no-op here until a base ref is passed (--base) — a follow-up.

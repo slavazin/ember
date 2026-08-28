@@ -839,7 +839,10 @@ function walkMarkdownAndCode(dir: string, root: string, out: string[]): void {
   for (const name of readdirSync(dir)) {
     const abs = join(dir, name);
     if (isDir(abs)) walkMarkdownAndCode(abs, root, out);
-    else if (/\.(md|ts)$/.test(name)) out.push(rel(root, abs));
+    // Test files are dev scaffolding, not the shipped layer: a seam test must carry tenant
+    // terms as fixtures, so scanning *.test.ts would flag the suite against itself. Art. 7
+    // binds the reusable layer that installs into a tenant, not its test harness — exclude.
+    else if (/\.(md|ts)$/.test(name) && !name.endsWith('.test.ts')) out.push(rel(root, abs));
   }
 }
 
@@ -883,7 +886,7 @@ export const RULES: Rule[] = [
   { name: 'do-dont', run: doDontPairing, residue: ['checks pairing and adjacency across SCHEMAs, skill packs, and role templates, not that a Don’t names a real, non-vacuous overshoot (LANGUAGE.md L3’s own residue).'] },
   { name: 'readme-kind', run: readmeKind, residue: ['checks the register/ledger declaration is present, not that the store behaves as declared.'] },
   { name: 'escapes', run: escapesValid, residue: ['checks escape syntax other(<what>), not that the escape was the right call over a named term.'] },
-  { name: 'check-seam', run: checkSeam, residue: ['greps a DERIVED tenant-term set; cannot catch tenant knowledge expressed without a registered term (paraphrase), and coverage grows only as the vocabulary does. A no-op until the tenant grows terms/scenarios.'] },
+  { name: 'check-seam', run: checkSeam, residue: ['greps a DERIVED tenant-term set; cannot catch tenant knowledge expressed without a registered term (paraphrase), and coverage grows only as the vocabulary does. A no-op until the tenant grows terms/scenarios. Excludes *.test.ts — the suite carries tenant terms as fixtures and is not the shipped layer.'] },
 ];
 
 const GLOBAL_RESIDUE = [
