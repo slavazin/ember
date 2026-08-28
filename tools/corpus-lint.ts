@@ -167,8 +167,16 @@ function walkMarkdown(dir: string, root: string, out: string[]): void {
   }
 }
 
-function rel(root: string, abs: string): string {
-  return abs.startsWith(root + '/') ? abs.slice(root.length + 1) : abs;
+// Repo-relative, always '/'-separated. join() yields '\' on Windows while git's toplevel is
+// '/'-form, so normalize BOTH sides before stripping the root — a '/'-only compare left the
+// root in place on Windows and produced a doubled path. Downstream checks compare against
+// '/'-form literals (INDEX_TARGETS, 'corpus/LANGUAGE.md', refs-resolve targets), so the
+// result must be '/'-separated too. (platform-assumption — surfaced by the Windows CI leg.)
+export function rel(root: string, abs: string): string {
+  const toPosix = (p: string) => p.split('\\').join('/');
+  const r = toPosix(root).replace(/\/+$/, '');
+  const a = toPosix(abs);
+  return a.startsWith(r + '/') ? a.slice(r.length + 1) : a;
 }
 
 // Blank out fenced and inline code spans so field names and YAML examples inside code

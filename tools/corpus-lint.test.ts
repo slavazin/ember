@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
-import { lint, CONSTITUTION_ARTICLE_CAP, CONSTITUTION_SKILL, type Finding } from './corpus-lint.ts';
+import { lint, rel, CONSTITUTION_ARTICLE_CAP, CONSTITUTION_SKILL, type Finding } from './corpus-lint.ts';
 import { markers, parseEntry, renderIndexBlock, spliceIndexBlock } from './index-contract.ts';
 
 // ── fixtures ──
@@ -646,6 +646,17 @@ test('do-dont: a Do and Don\'t split by a blank line are not a valid pair', () =
   withCorpus({ 'corpus/x/README.md': '# r', 'corpus/x/SCHEMA.md': "# S\n\n**Do:** near.\n\n**Don't:** far, across a blank line.\n" }, (root) =>
     assert.ok(errors(run(root, 'do-dont')).some((f) => /same block/.test(f.message))),
   );
+});
+
+// rel() must return a '/'-separated repo-relative path from either OS separator — a
+// '/'-only strip left the root in place on Windows (join yields '\'), doubling the path
+// and ENOENT-ing every file read. Locked here so the fix holds without the Windows CI leg
+// (platform-assumption; the leg surfaced it, this test pins it on every platform).
+test('rel: strips the root and normalizes separators (POSIX, Windows, and mixed)', () => {
+  assert.equal(rel('/tmp/x', '/tmp/x/corpus/decisions/D-0007.md'), 'corpus/decisions/D-0007.md');
+  assert.equal(rel('C:\\Temp\\x', 'C:\\Temp\\x\\corpus\\decisions\\D-0007.md'), 'corpus/decisions/D-0007.md');
+  assert.equal(rel('C:/Users/x/ember', 'C:\\Users\\x\\ember\\corpus\\LANGUAGE.md'), 'corpus/LANGUAGE.md');
+  assert.equal(rel('/tmp/x/', '/tmp/x/corpus/README.md'), 'corpus/README.md'); // trailing-slash root
 });
 
 // ── refs-resolve (BS-0010, dangling-reference) ──
