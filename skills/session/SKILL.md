@@ -37,22 +37,30 @@ residue.
 
 ## Close
 
-A session does not end without the close-out.
+A session does not end without the close-out, and the close-out is the session's
+pull request — the record the next boot reads. The session files this pull request
+whether or not it drafts a candidate entry; the dispositions and the closing
+attestation are content enough, and the push is approval-gated.
 
-1. **Record dispositions.** For every entry the session consulted, record one
-   disposition:
+1. **Record dispositions.** Into the pull request, record one disposition for
+   every entry the session consulted:
    - **applied** — the entry bound the work and its payload was used.
    - **considered-not-applicable** — the entry was consulted and set aside: its
      `not-this` matched, or its payload did not bind the work in hand.
    - **fired-off-map** — the entry's hook matched a work shape the corpus does
      not cover; the fire surfaced a gap, and the observation is a promotion
      candidate.
-2. **File candidates.** Any candidate entry is drafted on the session's branch
-   and pushed through the approval gate. A draft carries no id — admission mints
-   it. Draft through the `corpus-write` skill.
+2. **File candidates.** A candidate entry, when the session has one, is drafted
+   through the `corpus-write` skill and rides the same pull request. A draft
+   carries no id — admission mints it.
 3. **Walk the closing latches.** Poll each row of `corpus/latches/closing.md`
    against the work in hand, discharge the owed act of every row that fires, and
    leave the walk's `latch-walk:` line in the pull request.
+
+**Do:** file the session's pull request even when no candidate is drafted — the
+dispositions and closing attestation are a durable record on their own.
+**Don't:** don't skip the pull request on a quiet session; an unfiled close-out
+is state the next boot cannot recover.
 
 **Do:** record a disposition for every consulted entry — the dispositions are the
 telemetry the slow loop promotes from.

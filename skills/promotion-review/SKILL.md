@@ -22,7 +22,7 @@ one is corrected.
 
 ## The graded bars
 
-Knowledge earns its tier by recurrence, and each tier has a bar:
+Most knowledge earns its tier by recurrence, and each tier has a bar:
 
 - **Candidate draft** — one anchored observation. Lives on a branch, the
   pre-admission tier; discardable without trace.
@@ -34,10 +34,16 @@ Knowledge earns its tier by recurrence, and each tier has a bar:
 - **Mechanization** — two silent failures of a duty already carried by a rule.
   The mechanical part becomes a floor gate; the rule's residue is disclosed anew.
 
-**Do:** hold each promotion to its bar, reading the count from the entries'
-anchors.
-**Don't:** don't promote on a single instance — one occurrence is at most a
-draft, and permanence from one instance is the error the bars exist to stop.
+A **belief** is the exception: recurrence is not its bar. A world-facing claim
+admits on a declared falsifier, a deadline, and a reference price, plus the human
+merge — so a single novel hypothesis is admissible (see
+[/corpus/beliefs/README.md](/corpus/beliefs/README.md)).
+
+**Do:** hold each recurrence-tiered promotion to its count, read from the
+entries' anchors, and admit a belief on its falsifier, deadline, and price.
+**Don't:** don't promote a decision or rule on a single instance — one occurrence
+is at most a draft — and don't force a recurrence count onto a belief, whose bar
+is a stated falsifier, not repetition.
 
 ## The slot signature
 

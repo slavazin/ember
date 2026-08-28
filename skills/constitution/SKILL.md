@@ -12,8 +12,8 @@ mechanism.
 
 This is a **register** — corrected in place, never narrated; git history carries
 its amendments. It is capped at **ten articles**. The cap is a hard limit, not a
-target: adding an article requires evicting one in the same change, and the count
-is enforced by `corpus-lint` on this file. Each article states a bare constraint;
+target: an addition that would exceed ten requires evicting an article in the
+same change, and the count is enforced by `corpus-lint` on this file. Each article states a bare constraint;
 the procedure that discharges it lives in the named skill, in one home, never
 restated here.
 
