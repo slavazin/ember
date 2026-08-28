@@ -550,6 +550,19 @@ test('check-seam: no derivable tenant vocabulary is a disclosed no-op skip', () 
   });
 });
 
+test('check-seam: a tenant term in a *.test.ts fixture is exempt; in production code it leaks', () => {
+  // A seam test must name tenant terms as fixtures — the scan must not flag the suite itself.
+  withCorpus(
+    { 'scenarios/pool-exhaustion-a/x.txt': '', 'tools/thing.test.ts': 'a fixture that mentions pool-exhaustion' },
+    (root) => assert.equal(errors(run(root, 'check-seam')).length, 0),
+  );
+  // The same term in shipped layer code is still a leak.
+  withCorpus(
+    { 'scenarios/pool-exhaustion-a/x.txt': '', 'tools/thing.ts': 'code that mentions pool-exhaustion' },
+    (root) => assert.match(errors(run(root, 'check-seam'))[0]!.message, /tenant term 'pool-exhaustion'/),
+  );
+});
+
 // ── locks for the Qodo review findings (presence/shape hardening) ──
 
 test('five-slot: required lifecycle/hook fields must be present; status must be a valid enum', () => {
