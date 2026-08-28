@@ -193,24 +193,34 @@ test('a successful write leaves no temporary file behind', () => {
   });
 });
 
-test('a failed host write leaves the original bytes intact — atomic replace, never truncation', () => {
-  withRepo((root) => {
-    // where the process writes regardless of mode (e.g. root in CI) this cannot be exercised
-    if (typeof process.getuid === 'function' && process.getuid() === 0) return;
-    writeEntry(root, 'decisions', 'D-0007.md', D0007); // makes the host stale, so a write is attempted
-    const target = join(root, INDEX_TARGETS.decisions);
-    const original = readFileSync(target, 'utf8');
-    const hostDir = dirname(target);
-    chmodSync(hostDir, 0o500); // read + execute, no write — the temp file cannot be created
-    try {
-      const outcome = processStore(root, 'decisions', false);
-      assert.equal(outcome.kind, 'error');
-      assert.equal(readFileSync(target, 'utf8'), original); // host never truncated
-    } finally {
-      chmodSync(hostDir, 0o700); // restore so the temp dir can be removed
-    }
-  });
-});
+// A read-only directory denies writes only on POSIX, and only for a non-root user. Where
+// it cannot — Windows has no such directory-mode semantics, and root ignores the mode —
+// the write failure cannot be provoked, so the coverage is skipped there rather than run
+// against a permission model that would not hold and assert a failure that never happens.
+const cannotDenyWrites =
+  process.platform === 'win32' ||
+  (typeof process.getuid === 'function' && process.getuid() === 0);
+
+test(
+  'a failed host write leaves the original bytes intact — atomic replace, never truncation',
+  { skip: cannotDenyWrites ? 'needs a non-root POSIX user: a read-only dir must deny writes' : false },
+  () => {
+    withRepo((root) => {
+      writeEntry(root, 'decisions', 'D-0007.md', D0007); // makes the host stale, so a write is attempted
+      const target = join(root, INDEX_TARGETS.decisions);
+      const original = readFileSync(target, 'utf8');
+      const hostDir = dirname(target);
+      chmodSync(hostDir, 0o500); // read + execute, no write — the temp file cannot be created
+      try {
+        const outcome = processStore(root, 'decisions', false);
+        assert.equal(outcome.kind, 'error');
+        assert.equal(readFileSync(target, 'utf8'), original); // host never truncated
+      } finally {
+        chmodSync(hostDir, 0o700); // restore so the temp dir can be removed
+      }
+    });
+  },
+);
 
 test('--check names a stale store, exits non-zero, and writes nothing', () => {
   withRepo((root) => {
