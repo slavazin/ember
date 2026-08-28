@@ -1,0 +1,14 @@
+{
+  "name": "orders-svc",
+  "version": "1.0.0",
+  "private": true,
+  "description": "orders service with a small PostgreSQL connection pool",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "pg": "^8.13.1"
+  }
+}

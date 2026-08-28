@@ -1,0 +1,54 @@
+name: pool-exhaustion-b
+
+services:
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  catalog-svc:
+    build: ./catalog-svc
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      POOL_MAX: "5"
+      HOLD_SECONDS: "1"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz',timeout=2).status==200 else 1)\""
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    # Direct access to the service for probing /debug/pool during a diagnosis.
+    ports:
+      - "8001:8000"
+
+  gateway:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      catalog-svc:
+        condition: service_healthy
+    ports:
+      - "8081:80"
+
+  # The load surge. Off by default (profile "inject"); inject.sh starts it.
+  loadgen:
+    build: ./loadgen
+    environment:
+      TARGET: "http://gateway:80/catalog/1"
+      RATE: "8"
+      REQ_TIMEOUT: "10"
+    depends_on:
+      gateway:
+        condition: service_started
+    profiles: ["inject"]
+    restart: "no"
