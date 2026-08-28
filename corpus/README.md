@@ -68,9 +68,10 @@ duplication, and it drifts.
 Proposals live on branches. An un-merged draft has no eternal ID and may be
 discarded without trace; the merge is the admission — it mints the ID
 (`D-`/`R-`/`B-nnnn`: reserve-once, immutable, gap-tolerant) and stamps the
-adjudication. IDs never encode tier or status. Retirement is a status flip
-plus a successor pointer — never deletion, never an in-place edit of a frozen
-entry.
+adjudication. IDs never encode tier or status. Retirement is a status flip —
+carrying a successor pointer when a successor exists (superseded), terminal
+without one when none does (moot, settled) — never deletion, never an
+in-place edit of a frozen entry.
 
 The event record is git history itself: proposals, adjudications, and
 supersessions are read from commits and merged pull requests, not from a

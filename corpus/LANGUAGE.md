@@ -183,7 +183,8 @@ enter through the lexicon's escape, then become latchable.
 Lint hooks derivable from this file. Each checks presence or shape, never
 judgment — the floor, honestly disclosed:
 
-- banned-tell grep (the L1 table) over all corpus files
+- banned-tell grep (the L1 table) over corpus files, excluding this file's
+  own tables and quoted examples — they mention the tells, never use them
 - date format `YYYY-MM-DD` wherever a date appears
 - Do/Don't pairing: every `**Do:**` in a SCHEMA has a sibling `**Don't:**`
 - every store README declares register or ledger

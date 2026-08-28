@@ -5,7 +5,7 @@ Rows live in `planning.md` and `closing.md`, one markdown table each:
 ```markdown
 | fires-when | consult | owed act |
 |---|---|---|
-| diagnosing latency or timeouts in a service with a datastore client | rules index | apply matching rules before free-form investigation |
+| diagnosing latency or timeouts in a service with a datastore client | rules/ | apply matching rules before free-form investigation |
 ```
 
 ## Fields

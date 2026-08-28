@@ -15,7 +15,7 @@ not-this:      # mandatory — shapes fires-when matches where the duty does
                # NOT bind; each names an observed or concretely predicted
                # misfire
 warrant: []    # ≥ 2 decision IDs, from distinct surfaces; the surfaces are
-               # named in those decisions' `surfaces:` field
+               # named in those decisions' `recurrences:` field
 floor:         # what mechanically enforces part of the duty — a gate or
                # check by name — or `none`; floor plus residue cover the duty
 residue:       # mandatory — what enforcement of this rule does not check

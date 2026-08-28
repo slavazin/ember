@@ -10,7 +10,10 @@ means superseding.
 id:            # assigned at merge; absent in drafts
 status: active # active | superseded | moot  — the only field ever flipped
 superseded-by: # required when status: superseded
-surfaces: []   # the distinct surfaces this decision was observed to bind on
+recurrences: []  # ≥ 2 — the anchored occurrences that nominated this
+                 # decision, each `<surface>: <anchor>`; the admission bar
+                 # is checked here, and the distinct surfaces named here
+                 # are what the rule store's warrant bar counts
 moot-when:     # retirement condition — the nameable event under which the
                # decided fork itself stops existing
 created:       # YYYY-MM-DD of admission
