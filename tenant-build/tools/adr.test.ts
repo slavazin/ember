@@ -12,12 +12,18 @@ import {
   indexView,
   relatedView,
   scopesView,
+  discoverChangedPaths,
   type Adr,
 } from './adr-lib.ts';
 
 // A minimal valid entry text, overridable field-by-field via a frontmatter string + summary.
+// Carries every required body section so a valid fixture is genuinely schema-complete.
 function entry(front: string, summary = 'a decision that routes but does not obey'): string {
-  return `---\n${front}\n---\n# ${summary}\n\n## Decision\nThe constraint.\n`;
+  return (
+    `---\n${front}\n---\n# ${summary}\n\n` +
+    `## Context\nThe forces.\n\n## Decision\nThe constraint.\n\n` +
+    `## Consequences\nWhat it enables.\n\n## Warrant\n- False if: the premise reverses.\n`
+  );
 }
 
 function adr(overrides: Partial<Adr> & { id: string; file?: string }): Adr {
@@ -99,6 +105,41 @@ test('a missing summary line is an error', () => {
   const noSummary = '---\nid: ADR-0007\nstatus: accepted\ndecided: 2026-08-28\n---\n\n## Decision\nx\n';
   const { errors } = parseAdrFile('ADR-0007.md', noSummary);
   assert.ok(errors.some((e) => e.includes('summary')));
+});
+
+test('an entry missing a required body section is rejected (a summary alone is not schema-valid)', () => {
+  const noWarrant =
+    '---\nid: ADR-0007\nstatus: accepted\ndecided: 2026-08-28\n---\n# a real summary\n\n' +
+    '## Context\nx\n\n## Decision\ny\n\n## Consequences\nz\n';
+  const { errors } = parseAdrFile('ADR-0007.md', noWarrant);
+  assert.ok(errors.some((e) => e.includes('missing required section: ## Warrant')));
+  // Options considered is optional — its absence is not an error.
+  assert.ok(!errors.some((e) => e.includes('Options')));
+});
+
+test('a present non-string scalar field is a shape error, not silent absence (dropped edge)', () => {
+  const asList = parseAdrFile(
+    'ADR-0007.md',
+    entry('id: ADR-0007\nstatus: accepted\ndecided: 2026-08-28\nsupersedes: [ADR-0001]'),
+  );
+  assert.ok(asList.errors.some((e) => e.includes('supersedes must be a scalar string')));
+  const asMap = parseAdrFile(
+    'ADR-0007.md',
+    entry('id: ADR-0007\nstatus: accepted\ndecided: 2026-08-28\npromoted-to:\n  a: b'),
+  );
+  assert.ok(asMap.errors.some((e) => e.includes('promoted-to must be a scalar string')));
+});
+
+test('a present non-string required field errors once, not as both bad-type and missing', () => {
+  const { errors } = parseAdrFile('ADR-0007.md', entry('id: [ADR-0007]\nstatus: accepted\ndecided: 2026-08-28'));
+  assert.equal(errors.filter((e) => e.startsWith('id ')).length, 1);
+  assert.ok(errors.some((e) => e.includes('id must be a scalar string')));
+  assert.ok(!errors.some((e) => e.includes('id is required')));
+});
+
+test('an empty optional scalar is treated as absent, not an error', () => {
+  const { errors } = parseAdrFile('ADR-0007.md', entry('id: ADR-0007\nstatus: accepted\ndecided: 2026-08-28\npromoted-to:'));
+  assert.deepEqual(errors, []);
 });
 
 // ── checkCorpus: identity + reciprocity + resolution (split-identity, dangling-reference) ──
@@ -192,6 +233,23 @@ test('relatedView returns outbound edges and inbound citers', () => {
   assert.ok(lineage.outbound.some((e) => e.relation === 'related' && e.adr.id === 'ADR-0006'));
   assert.ok(lineage.inbound.some((e) => e.adr.id === 'ADR-0006'));
   assert.equal(relatedView(corpus, 'ADR-9999').missing, true);
+});
+
+// ── discoverChangedPaths: the default scopes input includes untracked files ──
+
+test('discoverChangedPaths unions tracked diff with untracked files and dedupes, tracked first', () => {
+  const responses = new Map<string, string>([
+    ['merge-base HEAD origin/main', 'abc123\n'],
+    ['diff --name-only abc123', 'tools/a.ts\nshared.ts\n'],
+    ['ls-files --others --exclude-standard', 'tenant-build/new.md\nshared.ts\n'],
+  ]);
+  const runGit = (args: string[]): string | undefined => responses.get(args.join(' '));
+  assert.deepEqual(discoverChangedPaths(runGit), ['tools/a.ts', 'shared.ts', 'tenant-build/new.md']);
+});
+
+test('discoverChangedPaths falls back to HEAD when merge-base is unavailable', () => {
+  const runGit = (args: string[]): string | undefined => (args[0] === 'diff' ? 'x.ts\n' : undefined);
+  assert.deepEqual(discoverChangedPaths(runGit), ['x.ts']);
 });
 
 // ── loadCorpus over a temp store, and the empty case ──

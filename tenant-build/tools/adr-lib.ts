@@ -58,8 +58,41 @@ export function isEntryFile(name: string): boolean {
   return ENTRY_FILE_RE.test(name);
 }
 
-function asScalar(v: unknown): string | undefined {
-  return typeof v === 'string' ? v : undefined;
+// Read an optional scalar field. Absent (missing or null) returns undefined; a value that is
+// present but not a string is a shape error, never silently treated as absent — a dropped edge
+// (e.g. `supersedes: [ADR-0001]`) would evade the reciprocity check downstream (partial-contract).
+function readScalar(data: Record<string, unknown>, key: string, errors: string[]): string | undefined {
+  const v = data[key];
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== 'string') {
+    errors.push(`${key} must be a scalar string`);
+    return undefined;
+  }
+  return v;
+}
+
+// A required scalar: absent is its own error; a present non-string is caught by readScalar. The
+// caller distinguishes the two via the returned flag so it never double-reports one bad value.
+function readRequiredScalar(
+  data: Record<string, unknown>,
+  key: string,
+  errors: string[],
+): { value: string; present: boolean } {
+  const raw = data[key];
+  const value = readScalar(data, key, errors);
+  if (value === undefined) {
+    if (raw === undefined || raw === null) errors.push(`${key} is required`);
+    return { value: '', present: false };
+  }
+  return { value, present: true };
+}
+
+// The body sections the schema fixes as required. `## Options considered` is intentionally not
+// here — it may be omitted for an uncontested decision (its absence is itself signal).
+const REQUIRED_SECTIONS = ['Context', 'Decision', 'Consequences', 'Warrant'] as const;
+
+function hasSection(body: string, name: string): boolean {
+  return new RegExp(`^##\\s+${name}\\s*$`, 'm').test(body);
 }
 
 // A declared list field: an array of non-empty strings, or absent. Anything else — a scalar,
@@ -112,19 +145,19 @@ export function parseAdrFile(file: string, text: string): { adr: Adr; errors: st
     if (!(KNOWN_KEYS as readonly string[]).includes(key)) errors.push(`unknown frontmatter key: ${key}`);
   }
 
-  const id = asScalar(data['id']) ?? '';
-  if (id === '') errors.push('id is required (assigned at merge)');
-  else if (!ID_RE.test(id)) errors.push(`id "${id}" is not canonical ADR-nnnn`);
+  const idField = readRequiredScalar(data, 'id', errors);
+  const id = idField.value;
+  if (idField.present && !ID_RE.test(id)) errors.push(`id "${id}" is not canonical ADR-nnnn`);
 
-  const statusRaw = asScalar(data['status']) ?? '';
-  if (!(STATUSES as readonly string[]).includes(statusRaw)) {
-    errors.push(`status "${statusRaw}" is not one of ${STATUSES.join(' | ')}`);
+  const statusField = readRequiredScalar(data, 'status', errors);
+  if (statusField.present && !(STATUSES as readonly string[]).includes(statusField.value)) {
+    errors.push(`status "${statusField.value}" is not one of ${STATUSES.join(' | ')}`);
   }
-  const status = statusRaw as Status;
+  const status = statusField.value as Status;
 
-  const supersedes = asScalar(data['supersedes']);
+  const supersedes = readScalar(data, 'supersedes', errors);
   if (supersedes !== undefined && !ID_RE.test(supersedes)) errors.push(`supersedes "${supersedes}" is not canonical`);
-  const supersededBy = asScalar(data['superseded-by']);
+  const supersededBy = readScalar(data, 'superseded-by', errors);
   if (supersededBy !== undefined && !ID_RE.test(supersededBy)) {
     errors.push(`superseded-by "${supersededBy}" is not canonical`);
   }
@@ -136,7 +169,7 @@ export function parseAdrFile(file: string, text: string): { adr: Adr; errors: st
   const related = collectList(data['related'], 'related', errors);
   for (const rid of related) if (!ID_RE.test(rid)) errors.push(`related "${rid}" is not a canonical ADR id`);
 
-  const promotedTo = asScalar(data['promoted-to']);
+  const promotedTo = readScalar(data, 'promoted-to', errors);
 
   const backfillRaw = data['backfilled'];
   let backfilled = false;
@@ -145,12 +178,18 @@ export function parseAdrFile(file: string, text: string): { adr: Adr; errors: st
     else errors.push('backfilled, when present, must be the literal true');
   }
 
-  const decided = asScalar(data['decided']) ?? '';
-  if (decided === '') errors.push('decided (YYYY-MM-DD) is required');
-  else if (!DATE_RE.test(decided)) errors.push(`decided "${decided}" is not YYYY-MM-DD`);
+  const decidedField = readRequiredScalar(data, 'decided', errors);
+  const decided = decidedField.value;
+  if (decidedField.present && !DATE_RE.test(decided)) errors.push(`decided "${decided}" is not YYYY-MM-DD`);
 
   const summary = extractSummary(body);
   if (summary === '') errors.push('no `# ` summary line');
+
+  // The required body sections must be present — a summary alone is not a schema-valid entry
+  // (an ADR with no Decision or Warrant carries no constraint and no falsification evidence).
+  for (const section of REQUIRED_SECTIONS) {
+    if (!hasSection(body, section)) errors.push(`missing required section: ## ${section}`);
+  }
 
   const adr: Adr = {
     id,
@@ -372,6 +411,23 @@ export function relatedView(adrs: Adr[], id: string): Lineage {
 export interface ScopeHit {
   path: string;
   adrs: Adr[];
+}
+
+export type GitRunner = (args: string[]) => string | undefined;
+
+/**
+ * The branch's changed paths for the default `adr scopes` run: files differing from the
+ * merge-base with origin/main, unioned with untracked files. A newly created governed file is
+ * untracked until staged, and the diff-time hook is meant to run during exactly that review — so
+ * omitting untracked paths would blind the hook to the new file. Git-runner is injected for testing.
+ */
+export function discoverChangedPaths(runGit: GitRunner): string[] {
+  const lines = (out: string | undefined): string[] =>
+    out === undefined ? [] : out.split('\n').map((s) => s.trim()).filter((s) => s !== '');
+  const base = runGit(['merge-base', 'HEAD', 'origin/main'])?.trim() || 'HEAD';
+  const tracked = lines(runGit(['diff', '--name-only', base]));
+  const untracked = lines(runGit(['ls-files', '--others', '--exclude-standard']));
+  return [...new Set([...tracked, ...untracked])]; // dedupe, tracked first
 }
 
 /** The diff-time arm: for each path, the ADRs whose declared scope prefixes govern it. */

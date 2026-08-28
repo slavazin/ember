@@ -16,11 +16,13 @@ import {
   type Adr,
   type Status,
   type Lineage,
+  type GitRunner,
   loadCorpus,
   checkCorpus,
   indexView,
   relatedView,
   scopesView,
+  discoverChangedPaths,
 } from './adr-lib.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -120,20 +122,16 @@ function cmdScopes(argv: string[]): void {
   }
 }
 
-/** Paths changed vs the merge-base with origin/main, best-effort; empty if git is unavailable. */
+/** Paths changed on this branch (tracked diff ∪ untracked); empty if git is unavailable. */
 function changedPaths(): string[] {
-  const run = (args: string[]): string | undefined => {
+  const runGit: GitRunner = (args) => {
     try {
       return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     } catch {
       return undefined;
     }
   };
-  let base = run(['merge-base', 'HEAD', 'origin/main'])?.trim();
-  if (!base) base = 'HEAD';
-  const out = run(['diff', '--name-only', base]);
-  if (out === undefined) return [];
-  return out.split('\n').map((s) => s.trim()).filter((s) => s !== '');
+  return discoverChangedPaths(runGit);
 }
 
 function cmdCheck(argv: string[]): void {

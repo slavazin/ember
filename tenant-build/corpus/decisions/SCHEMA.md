@@ -80,9 +80,11 @@ inherited by every entry:
   `converged-into`, or `related`; the reverse view is derived by `adr related`, never
   hand-listed here.
 - **Floor gate:** `adr check` validates shape — id canonical and equal to the filename,
-  status in its set, the supersession pair reciprocal, `scopes`/`related` well-formed.
-  Residue: it does not check that the Decision is true, that an anchor supports its
-  claim, or that a `scopes` prefix is the right one.
+  status in its set, every present scalar field a scalar (a list where a pointer belongs
+  fails, never silently drops the edge), the supersession pair reciprocal, `scopes`/`related`
+  well-formed, and the required body sections (Context, Decision, Consequences, Warrant)
+  present. Residue: it does not check that the Decision is true, that an anchor supports its
+  claim, that a section says anything, or that a `scopes` prefix is the right one.
 
 ## Do / Don't
 
