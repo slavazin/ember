@@ -244,12 +244,29 @@ test('discoverChangedPaths unions tracked diff with untracked files and dedupes,
     ['ls-files --others --exclude-standard', 'tenant-build/new.md\nshared.ts\n'],
   ]);
   const runGit = (args: string[]): string | undefined => responses.get(args.join(' '));
-  assert.deepEqual(discoverChangedPaths(runGit), ['tools/a.ts', 'shared.ts', 'tenant-build/new.md']);
+  const result = discoverChangedPaths(runGit);
+  assert.deepEqual(result.paths, ['tools/a.ts', 'shared.ts', 'tenant-build/new.md']);
+  assert.equal(result.baseResolved, true);
 });
 
-test('discoverChangedPaths falls back to HEAD when merge-base is unavailable', () => {
-  const runGit = (args: string[]): string | undefined => (args[0] === 'diff' ? 'x.ts\n' : undefined);
-  assert.deepEqual(discoverChangedPaths(runGit), ['x.ts']);
+test('discoverChangedPaths uses local main when origin/main is absent', () => {
+  const responses = new Map<string, string>([
+    ['merge-base HEAD main', 'def456\n'],
+    ['diff --name-only def456', 'tools/b.ts\n'],
+  ]);
+  const runGit = (args: string[]): string | undefined => responses.get(args.join(' '));
+  const result = discoverChangedPaths(runGit);
+  assert.deepEqual(result.paths, ['tools/b.ts']);
+  assert.equal(result.baseResolved, true);
+});
+
+test('discoverChangedPaths reports base unresolved rather than silently diffing against HEAD', () => {
+  // No mainline ref resolves; diffing HEAD would omit committed branch changes (BS-0023).
+  const runGit = (args: string[]): string | undefined =>
+    args[0] === 'diff' ? 'only-uncommitted.ts\n' : undefined;
+  const result = discoverChangedPaths(runGit);
+  assert.equal(result.baseResolved, false);
+  assert.deepEqual(result.paths, ['only-uncommitted.ts']);
 });
 
 // ── loadCorpus over a temp store, and the empty case ──

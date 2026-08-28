@@ -415,19 +415,35 @@ export interface ScopeHit {
 
 export type GitRunner = (args: string[]) => string | undefined;
 
+export interface ChangedPaths {
+  paths: string[];
+  baseResolved: boolean; // false when no mainline branch-point was found (committed changes omitted)
+}
+
 /**
  * The branch's changed paths for the default `adr scopes` run: files differing from the
- * merge-base with origin/main, unioned with untracked files. A newly created governed file is
+ * merge-base with the mainline, unioned with untracked files. A newly created governed file is
  * untracked until staged, and the diff-time hook is meant to run during exactly that review — so
- * omitting untracked paths would blind the hook to the new file. Git-runner is injected for testing.
+ * omitting untracked paths would blind the hook to the new file.
+ *
+ * The base is the merge-base with origin/main, or local main if the remote is absent. When
+ * neither resolves (a shallow or remoteless checkout) there is no branch-point, so diffing
+ * against HEAD would silently drop every already-committed branch change — the
+ * self-referential-baseline class (BS-0023). Rather than degrade silently, that state is
+ * reported via baseResolved so the caller can disclose the incompleteness. Git-runner injected
+ * for testing.
  */
-export function discoverChangedPaths(runGit: GitRunner): string[] {
+export function discoverChangedPaths(runGit: GitRunner): ChangedPaths {
   const lines = (out: string | undefined): string[] =>
     out === undefined ? [] : out.split('\n').map((s) => s.trim()).filter((s) => s !== '');
-  const base = runGit(['merge-base', 'HEAD', 'origin/main'])?.trim() || 'HEAD';
-  const tracked = lines(runGit(['diff', '--name-only', base]));
+  const mergeBase = (ref: string): string | undefined => {
+    const b = runGit(['merge-base', 'HEAD', ref])?.trim();
+    return b ? b : undefined;
+  };
+  const base = mergeBase('origin/main') ?? mergeBase('main');
+  const tracked = lines(runGit(['diff', '--name-only', base ?? 'HEAD']));
   const untracked = lines(runGit(['ls-files', '--others', '--exclude-standard']));
-  return [...new Set([...tracked, ...untracked])]; // dedupe, tracked first
+  return { paths: [...new Set([...tracked, ...untracked])], baseResolved: base !== undefined };
 }
 
 /** The diff-time arm: for each path, the ADRs whose declared scope prefixes govern it. */

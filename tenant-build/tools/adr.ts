@@ -17,6 +17,7 @@ import {
   type Status,
   type Lineage,
   type GitRunner,
+  type ChangedPaths,
   loadCorpus,
   checkCorpus,
   indexView,
@@ -109,7 +110,20 @@ function printLineage(id: string, lineage: Lineage): void {
 function cmdScopes(argv: string[]): void {
   const { positionals, flags } = parseArgs(argv, []);
   if (flags.size > 0) fail('scopes takes no flags');
-  const paths = positionals.length > 0 ? positionals : changedPaths();
+  let paths: string[];
+  if (positionals.length > 0) {
+    paths = positionals;
+  } else {
+    const discovered = changedPaths();
+    if (!discovered.baseResolved) {
+      // No branch-point resolved — committed branch changes are not in this set. Disclose it
+      // rather than report a silently-incomplete scope walk (self-referential-baseline).
+      process.stderr.write(
+        'adr: no mainline ref (origin/main or main) resolved; committed branch changes are omitted — pass paths explicitly\n',
+      );
+    }
+    paths = discovered.paths;
+  }
   if (paths.length === 0) {
     process.stderr.write('adr: no paths given and none changed on this branch\n');
     return;
@@ -123,7 +137,7 @@ function cmdScopes(argv: string[]): void {
 }
 
 /** Paths changed on this branch (tracked diff ∪ untracked); empty if git is unavailable. */
-function changedPaths(): string[] {
+function changedPaths(): ChangedPaths {
   const runGit: GitRunner = (args) => {
     try {
       return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
