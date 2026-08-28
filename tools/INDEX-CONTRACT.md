@@ -153,8 +153,9 @@ Regeneration is byte-stable, so the verifier compares bytes:
 ## The shared module (producer ↔ verifier)
 
 `tools/index-contract.ts` is the single source of truth. Both `index-gen` and
-`corpus-lint` import it; **neither reimplements parsing, rendering, or the
-markers.** Reimplementation is the exact drift this contract exists to prevent.
+`corpus-lint` import it; **neither reimplements parsing, rendering, the
+markers, or entry-file selection.** Reimplementation is the exact drift this
+contract exists to prevent.
 
 ```ts
 export type StoreId = 'decisions' | 'rules' | 'beliefs';
@@ -164,6 +165,12 @@ export const INDEX_STORES: readonly StoreId[];
 export const INDEX_TARGETS: Record<StoreId, string>;
 
 export const FIELD_SEP: string; // ' · ' — the one delimiter
+
+// per-store id prefix (D/R/B) and the admitted-entry filename test — one file per entry,
+// the canonical `^<prefix>-\d{4}\.md$` every SCHEMA fixes. Both drivers select entry files
+// with these, so producer and verifier resolve one identical set (never two hand-kept literals).
+export const STORE_PREFIX: Record<StoreId, string>;
+export function isEntryFile(store: StoreId, name: string): boolean;
 
 export interface IndexRecord {
   id: string;               // 'D-0007'
@@ -186,9 +193,9 @@ export function spliceIndexBlock(skillText: string, store: StoreId, block: strin
 export function isBlockCurrent(skillText: string, store: StoreId, records: IndexRecord[]): boolean;
 ```
 
-- **`index-gen`** is a thin driver: for each `StoreId`, read the entry files,
-  `parseEntry` each, `renderIndexBlock`, read the target `SKILL.md`,
-  `spliceIndexBlock`, write it back.
+- **`index-gen`** is a thin driver: for each `StoreId`, select the entry files
+  with `isEntryFile`, `parseEntry` each, `renderIndexBlock`, read the target
+  `SKILL.md`, `spliceIndexBlock`, write it back.
 - **`corpus-lint`'s index rule** reads and parses the same way, then asserts the
   markers are present and `isBlockCurrent` holds for every target — importing
   these functions, never duplicating them.

@@ -26,20 +26,13 @@ import { fileURLToPath } from 'node:url';
 import {
   INDEX_STORES,
   INDEX_TARGETS,
+  isEntryFile,
   parseEntry,
   renderIndexBlock,
   spliceIndexBlock,
   type StoreId,
   type IndexRecord,
 } from './index-contract.ts';
-
-// The id prefix each store's entry files carry, per the store SCHEMAs
-// (corpus/<store>/SCHEMA.md fixes D-nnnn.md / R-nnnn.md / B-nnnn.md).
-const STORE_PREFIX: Record<StoreId, string> = {
-  decisions: 'D',
-  rules: 'R',
-  beliefs: 'B',
-};
 
 // A store's entry directory, relative to the repo root — the form used in messages.
 function storeDirRel(store: StoreId): string {
@@ -64,9 +57,8 @@ export function discoverEntryFiles(root: string, store: StoreId): string[] {
     if (errCode(e) === 'ENOENT') throw new Error(`store directory not found: ${relDir}`);
     throw new Error(`cannot read store directory ${relDir}: ${detail(e)}`);
   }
-  // One canonical rule shared by producer and verifier; a candidate to hoist into the module.
-  const pattern = new RegExp(`^${STORE_PREFIX[store]}-\\d{4}\\.md$`);
-  return names.filter((name) => pattern.test(name)).sort();
+  // The one canonical rule, shared with the verifier through the module — never re-derived here.
+  return names.filter((name) => isEntryFile(store, name)).sort();
 }
 
 // Read and parse every entry file in a store into the records the index needs.

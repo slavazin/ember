@@ -23,6 +23,8 @@ import {
   markers,
   parseEntry,
   isBlockCurrent,
+  isEntryFile,
+  STORE_PREFIX,
   type IndexRecord,
   type StoreId,
 } from './index-contract.ts';
@@ -45,22 +47,10 @@ export const ENTRY_STORES = ['decisions', 'rules', 'beliefs'] as const;
 // vocabulary/) are corrected in place — exempt from the frozen-path check.
 export const FROZEN_STORES = ['decisions', 'beliefs'] as const;
 
-// The admitted-entry filename prefix per store. An admitted entry is `<PREFIX>-nnnn.md`
-// — a zero-padded 4-digit ID, matched by `^<PREFIX>-\d{4}\.md$` (the canonical shape in
-// every SCHEMA and INDEX-CONTRACT.md example); a draft carries no minted ID and is named
-// otherwise. This predicate selects the indexed set and the frozen set.
-// FLAG (merge precondition): the sibling index-gen driver MUST select the byte-identical
-// set, or the two diverge and isBlockCurrent compares against a block index-gen never
-// produced. This `\d{4}` shape is held identical to index-gen's discovery (tightened from
-// `\d+` in its PR #3 Qodo review). INDEX-CONTRACT.md fixes the shared module surface but
-// does not yet pin this predicate — the durable fix is one exported `isEntryFile(store,
-// name)` in index-contract.ts that both drivers import (a Slava-gated contract-amendment
-// PR); until it lands, the two literals are kept identical by hand.
-const ADMITTED_PREFIX: Record<string, string> = {
-  decisions: 'D',
-  rules: 'R',
-  beliefs: 'B',
-};
+// Admitted-entry selection (`^<PREFIX>-\d{4}\.md$`) and the per-store prefix live in the
+// shared contract as isEntryFile / STORE_PREFIX, imported above: the producer (index-gen)
+// and this verifier resolve one identical set, never two hand-kept literals that could
+// drift (INDEX-CONTRACT.md).
 
 // Frozen entries accept only these in-place frontmatter changes after admission; every
 // other frontmatter line and the whole body are byte-frozen. decisions: a status flip
@@ -152,9 +142,7 @@ function entryFilesOf(root: string, store: string): string[] {
 }
 
 function isAdmittedFilename(store: string, filename: string): boolean {
-  const prefix = ADMITTED_PREFIX[store];
-  if (prefix === undefined) return false;
-  return new RegExp(`^${prefix}-\\d{4}\\.md$`).test(filename);
+  return (INDEX_STORES as readonly string[]).includes(store) && isEntryFile(store as StoreId, filename);
 }
 
 // Every markdown file governed by LANGUAGE.md that exists today: the corpus, the skill
@@ -377,8 +365,8 @@ function fiveSlot(ctx: Ctx): RuleResult {
       // (D-0008.md carrying id D-0007) they resolve to different entries.
       if (admitted) {
         const id = asString(fm.data['id']);
-        const prefix = ADMITTED_PREFIX[store] ?? '';
-        if (!new RegExp(`^${prefix}-\\d{4}$`).test(id)) fail(`id '${id}' is not a canonical ${prefix}-nnnn identifier`);
+        const prefix = STORE_PREFIX[store as StoreId];
+        if (!isEntryFile(store as StoreId, `${id}.md`)) fail(`id '${id}' is not a canonical ${prefix}-nnnn identifier`);
         else if (file !== `${id}.md`) fail(`filename must be '${id}.md' to match its id — found '${file}'`);
       }
 
