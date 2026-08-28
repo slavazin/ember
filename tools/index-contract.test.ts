@@ -7,6 +7,7 @@ import {
   renderIndexBlock,
   spliceIndexBlock,
   isBlockCurrent,
+  isEntryFile,
   INDEX_STORES,
   INDEX_TARGETS,
   FIELD_SEP,
@@ -222,4 +223,17 @@ test('every index target names a store and a skill path', () => {
   for (const store of INDEX_STORES) {
     assert.match(INDEX_TARGETS[store], /^skills\/.+\/SKILL\.md$/);
   }
+});
+
+test('isEntryFile matches only the canonical <prefix>-nnnn.md per store', () => {
+  assert.equal(isEntryFile('decisions', 'D-0007.md'), true);
+  assert.equal(isEntryFile('rules', 'R-0004.md'), true);
+  assert.equal(isEntryFile('beliefs', 'B-0001.md'), true);
+  // a wrong-store prefix, non-four-digit ids, the standing files, and drafts are excluded
+  assert.equal(isEntryFile('decisions', 'R-0007.md'), false);
+  assert.equal(isEntryFile('decisions', 'D-7.md'), false);
+  assert.equal(isEntryFile('decisions', 'D-00007.md'), false);
+  assert.equal(isEntryFile('decisions', 'README.md'), false);
+  assert.equal(isEntryFile('decisions', 'SCHEMA.md'), false);
+  assert.equal(isEntryFile('decisions', 'draft-pool.md'), false);
 });

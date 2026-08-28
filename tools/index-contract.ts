@@ -22,6 +22,23 @@ export const INDEX_TARGETS: Record<StoreId, string> = {
 // rather than silently corrupting a line.
 export const FIELD_SEP = ' · '; // ' · '
 
+// The id prefix each store's entry files carry, per the store SCHEMAs
+// (corpus/<store>/SCHEMA.md fixes D-nnnn.md / R-nnnn.md / B-nnnn.md).
+export const STORE_PREFIX: Record<StoreId, string> = {
+  decisions: 'D',
+  rules: 'R',
+  beliefs: 'B',
+};
+
+// Is `name` an admitted entry file for `store`? The canonical shape every SCHEMA and this
+// contract fix: the store prefix plus a zero-padded four-digit id (`^D-\d{4}\.md$`).
+// README.md, SCHEMA.md, and pre-admission drafts (no minted id) fall outside it. Both
+// index-gen (producer) and corpus-lint (verifier) import this, so they resolve the identical
+// entry set and their selection cannot drift — the rule this module exists to keep single.
+export function isEntryFile(store: StoreId, name: string): boolean {
+  return new RegExp(`^${STORE_PREFIX[store]}-\\d{4}\\.md$`).test(name);
+}
+
 export interface IndexRecord {
   id: string;
   status: string;
