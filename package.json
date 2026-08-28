@@ -9,9 +9,10 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test tools/*.test.ts",
+    "test": "node --import tsx --test tools/*.test.ts tenant-build/tools/*.test.ts",
     "gen:check": "node --import tsx tools/index-gen.ts --check",
-    "lint": "node --import tsx tools/corpus-lint.ts"
+    "lint": "node --import tsx tools/corpus-lint.ts",
+    "adr": "node --import tsx tenant-build/tools/adr.ts"
   },
   "dependencies": {
     "js-yaml": "^4.1.0"
