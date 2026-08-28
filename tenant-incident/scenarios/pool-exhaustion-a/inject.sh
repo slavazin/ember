@@ -13,11 +13,17 @@ echo "[inject] ensuring the core stack is up (gateway + orders-svc + postgres)..
 docker compose up -d --build postgres orders-svc gateway
 
 echo "[inject] waiting for the gateway to serve a healthy request..."
+ready=0
 for _ in $(seq 1 30); do
   code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$GATEWAY/orders/1" || echo 000)
-  if [ "$code" = "200" ]; then echo "[inject] gateway healthy (200)."; break; fi
+  if [ "$code" = "200" ]; then echo "[inject] gateway healthy (200)."; ready=1; break; fi
   sleep 1
 done
+if [ "$ready" -ne 1 ]; then
+  echo "[inject] ERROR: gateway did not become healthy within 30s; not starting the surge." >&2
+  echo "[inject] inspect with: docker compose ps; docker compose logs" >&2
+  exit 1
+fi
 
 echo "[inject] starting the load surge (open-loop ~8 req/s)..."
 docker compose --profile inject up -d --build loadgen

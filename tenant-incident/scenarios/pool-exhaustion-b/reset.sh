@@ -25,6 +25,11 @@ for _ in $(seq 1 30); do
   if [ "$ok" -ge 3 ]; then echo "[reset] gateway healthy (3 consecutive 200s)."; break; fi
   sleep 1
 done
+if [ "$ok" -lt 3 ]; then
+  echo "[reset] ERROR: gateway did not return 3 consecutive healthy responses; reset incomplete." >&2
+  echo "[reset] inspect with: docker compose ps; docker compose logs catalog-svc" >&2
+  exit 1
+fi
 
 echo "[reset] pool stats (direct): $(curl -s --max-time 5 "$SVC/debug/pool" || echo unavailable)"
 echo "[reset] environment healthy. Latent pool max 5 remains (the standing misconfiguration)."

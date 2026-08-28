@@ -17,7 +17,12 @@ REPORT=""
 MAX_STEPS=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --max-steps) MAX_STEPS="${2:-}"; shift 2 ;;
+    --max-steps)
+      if [ $# -lt 2 ] || ! printf '%s' "${2:-}" | grep -qE '^[0-9]+$'; then
+        echo "grade: --max-steps requires a nonnegative integer" >&2
+        exit 2
+      fi
+      MAX_STEPS="$2"; shift 2 ;;
     *)           REPORT="$1"; shift ;;
   esac
 done
