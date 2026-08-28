@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import { lint, rel, CONSTITUTION_ARTICLE_CAP, CONSTITUTION_SKILL, type Finding } from './corpus-lint.ts';
 import { markers, parseEntry, renderIndexBlock, spliceIndexBlock } from './index-contract.ts';
@@ -684,6 +685,20 @@ test('refs-resolve: references that resolve pass', () => {
   );
 });
 
+test('refs-resolve: a reference to a tool protocol under tools/*.md is checked', () => {
+  withCorpus({ 'tools/INDEX-CONTRACT.md': '# contract\n\nImports [the module](/tools/index-contract.ts).\n' }, (root) =>
+    assert.ok(errors(run(root, 'refs-resolve')).some((f) => /index-contract\.ts/.test(f.message))),
+  );
+});
+
+test('refs-resolve: a reference climbing out of the repo (..) is an error, not an environment probe', () => {
+  withCorpus({ 'skills/x/SKILL.md': '# x\n\nSee [outside](/../secret.md) and `corpus/../etc/passwd.md`.\n' }, (root) => {
+    const errs = errors(run(root, 'refs-resolve'));
+    assert.ok(errs.some((f) => /escapes the repository/.test(f.message)), 'expected a repo-escape error');
+    assert.equal(errs.length, 2, 'both traversal references flagged');
+  });
+});
+
 test('refs-resolve: entry-file placeholders and fenced examples are exempt', () => {
   withCorpus(
     {
@@ -697,7 +712,7 @@ test('refs-resolve: entry-file placeholders and fenced examples are exempt', () 
 // ── the whole real repo is green today (locks the today-green guarantee) ──
 
 test('the real repo passes with zero errors (only disclosed skips)', () => {
-  const root = join(dirname(new URL(import.meta.url).pathname), '..');
+  const root = join(dirname(fileURLToPath(import.meta.url)), '..'); // fileURLToPath, not .pathname: on Windows .pathname is /C:/… and breaks path APIs
   if (!existsSync(join(root, 'corpus'))) return; // not running from the repo
   const { findings } = lint({ root });
   const errs = errors(findings);
@@ -709,7 +724,7 @@ test('the real repo passes with zero errors (only disclosed skips)', () => {
 // Every rule walks the real repo here; a future rule that reaches into *.test.ts (where
 // fixtures legitimately carry the patterns) trips this guard instead of the CI gate.
 test('no rule flags a *.test.ts fixture surface (self-match class guard: BS-0004, BS-0022)', () => {
-  const root = join(dirname(new URL(import.meta.url).pathname), '..');
+  const root = join(dirname(fileURLToPath(import.meta.url)), '..'); // fileURLToPath, not .pathname: on Windows .pathname is /C:/… and breaks path APIs
   if (!existsSync(join(root, 'corpus'))) return;
   const { findings } = lint({ root });
   const selfFlagged = findings.filter((f) => f.file.endsWith('.test.ts'));

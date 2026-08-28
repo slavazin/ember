@@ -899,8 +899,9 @@ function escapeRe(s: string): string {
 // R12 — reference resolution (BS-0010, dangling-reference). A skill, SCHEMA, or protocol
 // that names a companion file the reader must open must ship that file — an unresolvable path
 // halts the walk at read time (the session boot walk that opened absent latch tables was the
-// original miss). Over LANGUAGE-governed prose it checks two reference shapes resolve to a
-// real file: repo-root-absolute markdown links `](/path)` and bare code-span paths
+// original miss). Over LANGUAGE-governed prose AND the tool protocols (tools/*.md) it checks
+// two reference shapes resolve to a real file: repo-root-absolute markdown links `](/path)`
+// and bare code-span paths
 // `top-dir/…/file.ext` under a known layer root. Fenced code blocks are illustrative and
 // exempt; entry-file placeholders (`…-nnnn.md`) and angle-bracket templates are not real
 // paths. It checks existence, not that the target's content is correct.
@@ -917,9 +918,19 @@ function isPlaceholderPath(p: string): boolean {
   return p.includes('nnnn') || p.includes('<') || p.includes('>');
 }
 
+// The files whose references this rule resolves: the LANGUAGE-governed prose (corpus, skills,
+// roles) plus the tool protocols under tools/*.md (INDEX-CONTRACT.md is a binding interface
+// that names companion paths). walkMarkdown skips non-.md, so tools/*.ts and *.test.ts are not
+// scanned — the rule reads protocols, not code.
+function filesWithReferences(root: string): string[] {
+  const out = languageGovernedFiles(root);
+  walkMarkdown(join(root, 'tools'), root, out);
+  return [...new Set(out)].sort();
+}
+
 function refsResolve(ctx: Ctx): RuleResult {
   const findings: Finding[] = [];
-  for (const relPath of languageGovernedFiles(ctx.root)) {
+  for (const relPath of filesWithReferences(ctx.root)) {
     const text = read(ctx.root, relPath).replace(/```[\s\S]*?```/g, blankOut);
     const seen = new Map<string, number>(); // target -> first line, deduped within a file
     const addRef = (raw: string, index: number) => {
@@ -930,6 +941,20 @@ function refsResolve(ctx: Ctx): RuleResult {
     for (const m of text.matchAll(ABS_LINK_RE)) if (m[1] !== undefined) addRef(m[1], m.index ?? 0);
     for (const m of text.matchAll(BARE_PATH_RE)) if (m[1] !== undefined) addRef(m[1], m.index ?? 0);
     for (const [target, line] of seen) {
+      // A '..' segment escapes the repo root: joining it to ctx.root resolves outside the
+      // checkout, so existence would depend on unrelated sibling files. Reject it as a
+      // malformed reference rather than let the environment decide (a repo-root reference has
+      // no reason to climb out). Checked before existsSync so nothing outside is ever probed.
+      if (target.split('/').includes('..')) {
+        findings.push({
+          rule: 'refs-resolve',
+          file: relPath,
+          line,
+          severity: 'error',
+          message: `references '${target}', which escapes the repository root — name a file by its repo-root path, no '..' (BS-0010)`,
+        });
+        continue;
+      }
       if (!existsSync(join(ctx.root, target))) {
         findings.push({
           rule: 'refs-resolve',
@@ -970,7 +995,7 @@ export const RULES: Rule[] = [
   { name: 'do-dont', run: doDontPairing, residue: ['checks pairing and adjacency across SCHEMAs, skill packs, and role templates, not that a Don’t names a real, non-vacuous overshoot (LANGUAGE.md L3’s own residue).'] },
   { name: 'readme-kind', run: readmeKind, residue: ['checks the register/ledger declaration is present, not that the store behaves as declared.'] },
   { name: 'escapes', run: escapesValid, residue: ['checks escape syntax other(<what>), not that the escape was the right call over a named term.'] },
-  { name: 'refs-resolve', run: refsResolve, residue: ['checks that repo-root-absolute markdown links and bare code-span layer paths resolve to a file; does not check the target content is right, nor catch a path named in prose without link or code-span syntax. Fenced code and `…-nnnn.md` placeholders are exempt.'] },
+  { name: 'refs-resolve', run: refsResolve, residue: ['over corpus/skills/roles prose and tools/*.md protocols, checks repo-root-absolute markdown links and bare code-span layer paths resolve (and reject `..`); does not check the target content is right, nor catch a path named in prose without link or code-span syntax. Fenced code and `…-nnnn.md` placeholders are exempt.'] },
   { name: 'check-seam', run: checkSeam, residue: ['greps a DERIVED tenant-term set; cannot catch tenant knowledge expressed without a registered term (paraphrase), and coverage grows only as the vocabulary does. A no-op until the tenant grows terms/scenarios. Excludes *.test.ts — the suite carries tenant terms as fixtures and is not the shipped layer.'] },
 ];
 
