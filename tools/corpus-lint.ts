@@ -271,6 +271,25 @@ function resolveFrozenBase(root: string, override?: string): string | undefined 
   return undefined;
 }
 
+function headSha(root: string): string | undefined {
+  try {
+    return git(root, ['rev-parse', 'HEAD']).trim();
+  } catch {
+    return undefined;
+  }
+}
+
+// True when the working tree (staged and unstaged) is byte-identical to HEAD for the given
+// paths — i.e. `git diff` reports no change, so a base pinned at HEAD would see nothing there.
+function workingTreeMatchesHead(root: string, paths: string[]): boolean {
+  try {
+    git(root, ['diff', '--quiet', 'HEAD', '--', ...paths]);
+    return true; // exit 0 — no diff
+  } catch {
+    return false; // non-zero exit — a diff exists (or git errored); let the check run
+  }
+}
+
 function gitShow(root: string, commit: string, path: string): string | undefined {
   try {
     return execFileSync('git', ['-C', root, 'show', `${commit}:${path}`], {
@@ -526,9 +545,30 @@ function frozenPath(ctx: Ctx): RuleResult {
       },
     ]);
   }
-
   const findings: Finding[] = [];
   const paths = FROZEN_STORES.map((s) => `corpus/${s}`);
+
+  // BS-0023 (self-referential-baseline): frozenPath compares the base commit against the
+  // WORKING TREE. When the base resolves to HEAD, that catches uncommitted edits (the normal
+  // local pre-commit flow) but is blind to a mutation already committed into HEAD — the exact
+  // exposure on a push to main, where origin/main sits at HEAD and the checkout is clean. So
+  // the self-compare is vacuous only when base == HEAD AND the working tree matches HEAD for
+  // the frozen paths: there is genuinely nothing this run can see. Disclose a skip rather than
+  // report a clean pass; the caller must pin the base to the state BEFORE the change (CI: the
+  // PR base SHA, or github.event.before).
+  const head = headSha(ctx.root);
+  if (head !== undefined && head === base && workingTreeMatchesHead(ctx.root, paths)) {
+    return ok([], [
+      {
+        rule: 'frozen-path',
+        reason:
+          'the resolved base equals HEAD with a clean working tree (the base ref points at the ' +
+          'commit under test — e.g. a push to main with origin/main at HEAD) — frozen entries are ' +
+          'UNCHECKED rather than compared to themselves. Pass --base <before-SHA> (CI: the PR base ' +
+          'SHA / github.event.before).',
+      },
+    ]);
+  }
   const baseEntries = lsTreeFiles(ctx.root, base, paths).filter((p) => {
     const store = p.split('/')[1];
     return store !== undefined && isAdmittedFilename(store, basename(p));
@@ -848,6 +888,54 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// R12 — reference resolution (BS-0010, dangling-reference). A skill, SCHEMA, or protocol
+// that names a companion file the reader must open must ship that file — an unresolvable path
+// halts the walk at read time (the session boot walk that opened absent latch tables was the
+// original miss). Over LANGUAGE-governed prose it checks two reference shapes resolve to a
+// real file: repo-root-absolute markdown links `](/path)` and bare code-span paths
+// `top-dir/…/file.ext` under a known layer root. Fenced code blocks are illustrative and
+// exempt; entry-file placeholders (`…-nnnn.md`) and angle-bracket templates are not real
+// paths. It checks existence, not that the target's content is correct.
+const REF_ROOTS = ['corpus', 'skills', 'roles', 'tools', 'tenant-incident'];
+const ABS_LINK_RE = /\]\((\/[A-Za-z0-9._/-]+)(#[^)]*)?\)/g;
+const BARE_PATH_RE = new RegExp(
+  '`((?:' + REF_ROOTS.join('|') + ')/[A-Za-z0-9._/-]+\\.(?:md|sh|ts|yml|yaml))`',
+  'g',
+);
+
+// A path segment the author wrote as a stand-in, not a file that exists: the entry-file
+// placeholder `<PREFIX>-nnnn.md` and any `<angle-bracket>` template token.
+function isPlaceholderPath(p: string): boolean {
+  return p.includes('nnnn') || p.includes('<') || p.includes('>');
+}
+
+function refsResolve(ctx: Ctx): RuleResult {
+  const findings: Finding[] = [];
+  for (const relPath of languageGovernedFiles(ctx.root)) {
+    const text = read(ctx.root, relPath).replace(/```[\s\S]*?```/g, blankOut);
+    const seen = new Map<string, number>(); // target -> first line, deduped within a file
+    const addRef = (raw: string, index: number) => {
+      const clean = raw.replace(/^\//, '').split('#')[0] ?? '';
+      if (clean === '' || isPlaceholderPath(clean)) return;
+      if (!seen.has(clean)) seen.set(clean, lineAt(text, index));
+    };
+    for (const m of text.matchAll(ABS_LINK_RE)) if (m[1] !== undefined) addRef(m[1], m.index ?? 0);
+    for (const m of text.matchAll(BARE_PATH_RE)) if (m[1] !== undefined) addRef(m[1], m.index ?? 0);
+    for (const [target, line] of seen) {
+      if (!existsSync(join(ctx.root, target))) {
+        findings.push({
+          rule: 'refs-resolve',
+          file: relPath,
+          line,
+          severity: 'error',
+          message: `references '${target}', which does not exist — ship every file a procedure names, at least header-only (BS-0010)`,
+        });
+      }
+    }
+  }
+  return ok(findings);
+}
+
 // ── shared collectors ──
 
 function collect(findings: Finding[], rule: string, file: string, text: string, re: RegExp, message: string, severity: Severity): void {
@@ -867,13 +955,14 @@ export const RULES: Rule[] = [
   { name: 'five-slot', run: fiveSlot, residue: ['checks slot presence and count, not that a section says anything true, that ≥2 warrant IDs are real and cross-surface, or that a falsifier tests the right quantity.', "moot-when (the decisions/rules retirement slot) presence is NOT enforced — it may be legitimately absent (a rule may exit by coverage migration); disclosed, and flagged for the SCHEMA author."] },
   { name: 'tombstone', run: tombstone, residue: ['checks a successor pointer is present on retirement, not that the pointed-to entry exists or is the right successor.'] },
   { name: 'constitution-cap', run: constitutionCap, residue: ['counts articles by marker; does not verify eviction was actually performed, only the resulting count. Targets the shipped skill, never planning/.'] },
-  { name: 'frozen-path', run: frozenPath, residue: ['freezes body bytes and non-lifecycle frontmatter against the merge-base; does not verify a status flip was warranted or that a successor exists. UNCHECKED when no base ref resolves (see skips) — CI must fetch the base.'] },
+  { name: 'frozen-path', run: frozenPath, residue: ['freezes body bytes and non-lifecycle frontmatter against the merge-base; does not verify a status flip was warranted or that a successor exists. UNCHECKED when no base ref resolves, or when the resolved base equals HEAD (a self-compare — see skips) — CI must pass the pre-change base per event.'] },
   { name: 'no-duty-language', run: noDutyLanguage, residue: ["keys on the literal 'fires-when'; duty phrasing written without that token (e.g. 'always check…') is review judgment."] },
   { name: 'banned-tell', run: bannedTell, residue: ['lexical match; cannot distinguish a genuine tell from a rare legitimate word — common-word tells are non-failing warnings. LANGUAGE.md’s L1 tables and quoted examples are excluded (it defines the tells); its prose is still scanned for hard tells.'] },
   { name: 'date-format', run: dateFormat, residue: ['flags malformed date shapes; does not check a date is real, correct, or that a needed date is present. A capitalized month word before a number may false-positive.'] },
   { name: 'do-dont', run: doDontPairing, residue: ['checks pairing and adjacency across SCHEMAs, skill packs, and role templates, not that a Don’t names a real, non-vacuous overshoot (LANGUAGE.md L3’s own residue).'] },
   { name: 'readme-kind', run: readmeKind, residue: ['checks the register/ledger declaration is present, not that the store behaves as declared.'] },
   { name: 'escapes', run: escapesValid, residue: ['checks escape syntax other(<what>), not that the escape was the right call over a named term.'] },
+  { name: 'refs-resolve', run: refsResolve, residue: ['checks that repo-root-absolute markdown links and bare code-span layer paths resolve to a file; does not check the target content is right, nor catch a path named in prose without link or code-span syntax. Fenced code and `…-nnnn.md` placeholders are exempt.'] },
   { name: 'check-seam', run: checkSeam, residue: ['greps a DERIVED tenant-term set; cannot catch tenant knowledge expressed without a registered term (paraphrase), and coverage grows only as the vocabulary does. A no-op until the tenant grows terms/scenarios. Excludes *.test.ts — the suite carries tenant terms as fixtures and is not the shipped layer.'] },
 ];
 

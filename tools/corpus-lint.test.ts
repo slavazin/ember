@@ -648,6 +648,41 @@ test('do-dont: a Do and Don\'t split by a blank line are not a valid pair', () =
   );
 });
 
+// ── refs-resolve (BS-0010, dangling-reference) ──
+
+test('refs-resolve: an absolute markdown link to a missing file is an error', () => {
+  withCorpus({ 'skills/x/SKILL.md': '# x\n\nOpen [the tables](/corpus/latches/planning.md) first.\n' }, (root) =>
+    assert.ok(errors(run(root, 'refs-resolve')).some((f) => /planning\.md/.test(f.message))),
+  );
+});
+
+test('refs-resolve: a bare code-span layer path to a missing file is an error', () => {
+  withCorpus({ 'skills/x/SKILL.md': '# x\n\nPoll each row of `corpus/latches/closing.md`.\n' }, (root) =>
+    assert.ok(errors(run(root, 'refs-resolve')).some((f) => /closing\.md/.test(f.message))),
+  );
+});
+
+test('refs-resolve: references that resolve pass', () => {
+  withCorpus(
+    {
+      'skills/x/SKILL.md': '# x\n\nSee [readme](/corpus/README.md) then `corpus/latches/planning.md`.\n',
+      'corpus/README.md': '# r\n',
+      'corpus/latches/planning.md': '| fires-when | consult | owed act |\n',
+    },
+    (root) => assert.deepEqual(errors(run(root, 'refs-resolve')), []),
+  );
+});
+
+test('refs-resolve: entry-file placeholders and fenced examples are exempt', () => {
+  withCorpus(
+    {
+      // `…-nnnn.md` is a stand-in, not a file; the dangling link inside a fence is illustrative.
+      'skills/x/SKILL.md': '# x\n\nName it `corpus/decisions/D-nnnn.md`.\n\n```\n[nope](/corpus/gone.md)\n```\n',
+    },
+    (root) => assert.deepEqual(errors(run(root, 'refs-resolve')), []),
+  );
+});
+
 // ── the whole real repo is green today (locks the today-green guarantee) ──
 
 test('the real repo passes with zero errors (only disclosed skips)', () => {
@@ -656,4 +691,36 @@ test('the real repo passes with zero errors (only disclosed skips)', () => {
   const { findings } = lint({ root });
   const errs = errors(findings);
   assert.equal(errs.length, 0, 'unexpected errors: ' + JSON.stringify(errs, null, 2));
+});
+
+// A scanner must never flag the code that defines or exercises the pattern it hunts — the
+// self-match class (BS-0004 on LANGUAGE.md's tell tables, BS-0022 on a seam test's fixtures).
+// Every rule walks the real repo here; a future rule that reaches into *.test.ts (where
+// fixtures legitimately carry the patterns) trips this guard instead of the CI gate.
+test('no rule flags a *.test.ts fixture surface (self-match class guard: BS-0004, BS-0022)', () => {
+  const root = join(dirname(new URL(import.meta.url).pathname), '..');
+  if (!existsSync(join(root, 'corpus'))) return;
+  const { findings } = lint({ root });
+  const selfFlagged = findings.filter((f) => f.file.endsWith('.test.ts'));
+  assert.deepEqual(selfFlagged, [], 'a scanner walked its own test surface: ' + JSON.stringify(selfFlagged));
+});
+
+// BS-0023 (self-referential-baseline): when the base resolves to HEAD and the working tree is
+// clean, frozenPath would compare every frozen entry to itself and pass vacuously — the exact
+// push-to-main exposure. It must disclose a skip instead. (A dirty working tree against
+// base==HEAD is the normal local flow and still runs — the frozen-path edit tests above cover
+// that path.) Tool-level backstop to CI pinning the pre-change base per event.
+test('frozen-path: base==HEAD with a clean tree is a disclosed skip, not a vacuous pass (BS-0023)', () => {
+  withGitRepo(
+    { 'corpus/decisions/D-0001.md': DECISION },
+    () => {}, // no mutation — the working tree matches HEAD, and base 'main' resolves to HEAD
+    (root) => {
+      const { findings, skips } = lint({ root, baseRef: 'main' }, ['frozen-path']);
+      assert.deepEqual(errors(findings), [], 'frozen-path must not report errors when it cannot compare');
+      assert.ok(
+        skips.some((s) => s.rule === 'frozen-path' && /equals HEAD/.test(s.reason)),
+        'expected a frozen-path self-compare skip',
+      );
+    },
+  );
 });
