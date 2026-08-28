@@ -1,0 +1,68 @@
+name: pool-exhaustion-a
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: shop
+    # max_connections far above the pool max, so the datastore is never the
+    # ceiling under load — the client pool is.
+    command: ["postgres", "-c", "max_connections=100"]
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d shop"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  orders-svc:
+    build: ./orders-svc
+    environment:
+      PGHOST: postgres
+      PGUSER: app
+      PGPASSWORD: app
+      PGDATABASE: shop
+      POOL_MAX: "5"
+      HOLD_SECONDS: "1"
+      PORT: "3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - "CMD"
+        - "node"
+        - "-e"
+        - "require('http').get('http://localhost:3000/healthz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    # Direct access to the service for probing /debug/pool during a diagnosis.
+    ports:
+      - "3001:3000"
+
+  gateway:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      orders-svc:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+
+  # The load surge. Off by default (profile "inject"); inject.sh starts it.
+  loadgen:
+    build: ./loadgen
+    environment:
+      TARGET: "http://gateway:80/orders/1"
+      RATE: "8"
+      REQ_TIMEOUT: "10"
+    depends_on:
+      gateway:
+        condition: service_started
+    profiles: ["inject"]
+    restart: "no"

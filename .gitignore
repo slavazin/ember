@@ -28,6 +28,10 @@ coverage/
 *.log
 npm-debug.log*
 
+# Python
+__pycache__/
+*.pyc
+
 # Secrets & local env — never committed
 .env
 .env.*
