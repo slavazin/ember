@@ -56,13 +56,14 @@ jobs:
             npm run lint -- --base "$base"
           fi
 
-  # ShellCheck gates the scenario scripts the TypeScript toolchain never sees — the surface
-  # where a bounded poll fell through to a success exit and an unvalidated arg looped
-  # (blindspot classes: unverified-success, unvalidated-arg). Linux-only: shellcheck is
-  # preinstalled on the ubuntu runner and the scripts are POSIX shell.
+  # ShellCheck gates the shell scripts the TypeScript toolchain never sees — the scenario
+  # fixtures (where a bounded poll fell through to a success exit and an unvalidated arg
+  # looped) and the host-side tools/ helpers (patch-to-pr.sh, the U1 corpus-deposit path).
+  # Blindspot classes: unverified-success, unvalidated-arg. Linux-only: shellcheck is
+  # preinstalled on the ubuntu runner; it reads each script's shebang (sh vs bash) itself.
   shell:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: ShellCheck scenario scripts
-        run: find tenant-incident/scenarios -name '*.sh' -print0 | xargs -0 shellcheck
+      - name: ShellCheck shell scripts
+        run: find tenant-incident/scenarios tools -name '*.sh' -print0 | xargs -0 shellcheck
