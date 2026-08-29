@@ -88,9 +88,10 @@ five-slot contract for the entry stores; the term block for `vocabulary/`); the
 close-out drafts it in place through the `corpus-write` skill, handing it the
 incident's id and class so the signed deposit commit places the entry in the
 learning arc, and files it as a draft on the session's branch, riding this pull
-request. Admission — the human merge — admits it, minting an id for the stores
-that carry one; a `vocabulary/` term is admitted as an id-less block, keyed by the
-term itself.
+request. Admission — the human merge — admits it: a store that mints its id at
+admission gains it then, a store that reserves its id at draft has carried it
+since filing, and a `vocabulary/` term is admitted as an id-less block, keyed by
+the term itself.
 
 **Do:** give every candidate the target store's five-slot shape through
 `corpus-write` — the payload and its latch fan, anchored to git-reachable evidence.

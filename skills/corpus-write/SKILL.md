@@ -36,7 +36,10 @@ store's `SCHEMA.md`, and:
 - Raise the abstraction to the constraint the evidence supports — state the
   judgment decoupled from the objects it was learned on, and no further than the
   anchors can still falsify.
-- Leave the id empty; admission mints it at merge.
+- Set the id as the target store's `SCHEMA.md` directs. A store that mints its
+  id at admission takes an empty id, and the merge mints it; a store that
+  reserves its id at draft — the build ADR store — carries the reserved id from
+  the draft, its filename equal to it.
 
 **Do:** raise the abstraction as far as the anchors can still bite.
 **Don't:** don't abstract past the evidence — a claim the anchors cannot falsify
@@ -94,8 +97,9 @@ verdict field empty.
 
 File the draft and the examiner record on the session's branch; the push is
 approval-gated. The pull request carries the draft, the examiner record, and the
-evidence; its merge is the durable human gate that admits the entry and mints its
-id.
+evidence; its merge is the durable human gate that admits the entry — minting its
+id where the store mints at admission, standing behind the id the draft reserved
+where the store reserves at draft.
 
 Build the candidate commit in the sandbox under the deposit identity, so the
 signature rides the patch the host pulls back and survives into the merged
@@ -114,10 +118,26 @@ deposit in the learning arc:
         --trailer 'Corpus-Store: <target store path>' \
         --trailer 'Deposited-By: incident-responder'
 
+Emit the commit as a formatted patch so its author and trailers leave the sandbox
+intact, and let the harness retrieve that patch:
+
+    git format-patch -1 --stdout > <incident-id>.patch
+
+The host applies the formatted patch with `git am`, which replays the recorded
+author and the trailer block; a bare working-tree diff carries neither, so the
+signature is lost at the sandbox boundary.
+
 `Incident-Class` groups a class across incidents and the commit's author-date
 orders it, so one incident and a later incident of the same class read out of git
 history directly. The iteration ordinal is that ordering; a deposit carries the
 class and leaves the count to be derived, never freezing a hand-set number.
+
+The surface markers — the `incident/<incident-id>` branch, the `corpus-deposit`
+label, and the incident-and-gate pull-request title and body — are the host's,
+derived from these same trailers by the helper that applies the patch and opens
+the pull request off the host (ADR-0009): the sandbox signs the commit, the host
+restates that signature on the surface. The sandbox sets no branch name or label
+itself, holds no push credential, and opens no pull request.
 
 **Do:** commit the deposit under the `incident-responder` author and the
 `Incident-*` trailer block, so the signature separates it from build work
@@ -127,6 +147,12 @@ trailer — an unsigned deposit is indistinguishable from build work in the shar
 pull-request stream, and the learning delta cannot be read from a history that
 cannot separate them.
 
-**Do:** file candidates on a branch and open a pull request.
-**Don't:** don't push to the main line — a direct write bypasses the gate the
-whole procedure exists to serve.
+**Do:** emit the deposit as a `git format-patch` artifact for the host to apply,
+so the author and trailers survive retrieval and `git am`.
+**Don't:** don't hand off a bare working-tree diff — it carries neither the
+author nor the trailers, and the signature dies at the sandbox boundary.
+
+**Do:** let the candidate reach the main line only through a branch and the pull
+request its merge gates.
+**Don't:** don't write to the main line directly — a direct write bypasses the
+gate the whole procedure exists to serve.
