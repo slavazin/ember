@@ -11,7 +11,7 @@
 //
 // Governed by /corpus/LANGUAGE.md — this file's own prose obeys it too.
 
-import { readFileSync, readdirSync, existsSync, statSync, realpathSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, lstatSync, realpathSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -28,6 +28,7 @@ import {
   type IndexRecord,
   type StoreId,
 } from './index-contract.ts';
+import { layerEntryFiles, admittedById, isDir } from './store-discovery.ts';
 
 // ── Named constants (the ones a reviewer or a later session will want to change) ──
 
@@ -52,13 +53,10 @@ export const FROZEN_STORES = ['decisions', 'beliefs'] as const;
 // and this verifier resolve one identical set, never two hand-kept literals that could
 // drift (INDEX-CONTRACT.md).
 
-// Frozen entries accept only these in-place frontmatter changes after admission; every
-// other frontmatter line and the whole body are byte-frozen. decisions: a status flip
-// with its successor pointer. beliefs: the same, plus the human-filled verdict.
-const MUTABLE_FROZEN_KEYS: Record<string, readonly string[]> = {
-  decisions: ['status', 'superseded-by'],
-  beliefs: ['status', 'superseded-by', 'verdict'],
-};
+// The in-place frontmatter changes each frozen store permits after admission live with that
+// store's contract in frozenStores(); every other frontmatter line and the whole body are
+// byte-frozen. Keeping the mutable-key set beside its store (not in one shared table) is what
+// stops one store's lifecycle from being asserted over another (decision 4 / BS-0012).
 
 // Frozen-path base: the merged permanent state the working tree is compared against.
 // Tried in order; the first that resolves is used via its merge-base with HEAD.
@@ -107,21 +105,6 @@ function read(root: string, rel: string): string {
   return readFileSync(join(root, rel), 'utf8');
 }
 
-function isDir(path: string): boolean {
-  try {
-    return statSync(path).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-function listMarkdown(dir: string): string[] {
-  if (!isDir(dir)) return [];
-  return readdirSync(dir)
-    .filter((name) => name.endsWith('.md'))
-    .sort();
-}
-
 // The five stores: corpus subdirectories carrying both a README and a SCHEMA.
 function storesWithSchema(root: string): string[] {
   const corpus = join(root, 'corpus');
@@ -134,33 +117,32 @@ function storesWithSchema(root: string): string[] {
     .sort();
 }
 
-// Entry files of a store: everything but its two standing files. Includes drafts.
-function entryFilesOf(root: string, store: string): string[] {
-  return listMarkdown(join(root, 'corpus', store)).filter(
-    (name) => name !== 'README.md' && name !== 'SCHEMA.md',
-  );
-}
-
-function isAdmittedFilename(store: string, filename: string): boolean {
-  return (INDEX_STORES as readonly string[]).includes(store) && isEntryFile(store as StoreId, filename);
-}
-
-// Every markdown file governed by LANGUAGE.md that exists today: the corpus, the skill
-// packs, and the role templates. skills/ and roles/ arrive with Tracks C — absent now.
+// Every markdown file governed by LANGUAGE.md: the layer prose (corpus scaffold, skill packs,
+// role templates), the build ADR store (tenant-build's ADRs are authored under LANGUAGE.md too),
+// and the incident tenant's prose. The tenant prose is *.md ONLY and excludes any `fixtures/`
+// tree: incident-report and log fixtures carry wall-clock timestamps and image tags that a
+// tell/date grep would false-positive on (decision 6 — LANGUAGE governance over tenant prose,
+// scoped to prose, not fixtures/scripts/conf).
 function languageGovernedFiles(root: string): string[] {
   const out: string[] = [];
   walkMarkdown(join(root, 'corpus'), root, out);
   walkMarkdown(join(root, 'skills'), root, out);
   walkMarkdown(join(root, 'roles'), root, out);
-  return out.sort();
+  walkMarkdown(join(root, 'tenant-build', 'corpus'), root, out);
+  walkMarkdown(join(root, 'tenant-incident'), root, out, SKIP_PROSE_DIRS);
+  return [...new Set(out)].sort();
 }
 
-function walkMarkdown(dir: string, root: string, out: string[]): void {
+// Subdirectory names whose markdown is not governed prose — skipped by the tenant-prose walk.
+const SKIP_PROSE_DIRS = new Set(['fixtures']);
+
+function walkMarkdown(dir: string, root: string, out: string[], skipDirs?: Set<string>): void {
   if (!isDir(dir)) return;
   for (const name of readdirSync(dir)) {
     const abs = join(dir, name);
     if (isDir(abs)) {
-      walkMarkdown(abs, root, out);
+      if (skipDirs?.has(name)) continue;
+      walkMarkdown(abs, root, out, skipDirs);
     } else if (name.endsWith('.md')) {
       out.push(rel(root, abs));
     }
@@ -341,11 +323,10 @@ function indexCurrent(ctx: Ctx): RuleResult {
       continue;
     }
 
-    const admitted = entryFilesOf(ctx.root, store).filter((f) => isAdmittedFilename(store, f));
+    const admitted = layerEntryFiles(ctx.root, store).filter((p) => isEntryFile(store as StoreId, basename(p)));
     const records: IndexRecord[] = [];
     let parseFailed = false;
-    for (const file of admitted) {
-      const relPath = `corpus/${store}/${file}`;
+    for (const relPath of admitted) {
       try {
         records.push(parseEntry(store as StoreId, read(ctx.root, relPath)));
       } catch (cause) {
@@ -372,8 +353,8 @@ function indexCurrent(ctx: Ctx): RuleResult {
 function fiveSlot(ctx: Ctx): RuleResult {
   const findings: Finding[] = [];
   for (const store of ENTRY_STORES) {
-    for (const file of entryFilesOf(ctx.root, store)) {
-      const relPath = `corpus/${store}/${file}`;
+    for (const relPath of layerEntryFiles(ctx.root, store)) {
+      const file = basename(relPath);
       let fm: Frontmatter;
       try {
         fm = readFrontmatter(read(ctx.root, relPath));
@@ -487,8 +468,7 @@ function priceMapOk(v: unknown): boolean {
 function tombstone(ctx: Ctx): RuleResult {
   const findings: Finding[] = [];
   for (const store of FROZEN_STORES) {
-    for (const file of entryFilesOf(ctx.root, store)) {
-      const relPath = `corpus/${store}/${file}`;
+    for (const relPath of layerEntryFiles(ctx.root, store)) {
       let fm: Frontmatter;
       try {
         fm = readFrontmatter(read(ctx.root, relPath));
@@ -535,6 +515,79 @@ function constitutionCap(ctx: Ctx): RuleResult {
   return ok();
 }
 
+// The immutability contract for a base-commit path, resolved by CONVENTION — never by reading
+// the working tree alone — so an entry whose store directory is DELETED in this change is still
+// classified and its removal caught (a working-tree-derived scope would let a deletion shrink the
+// gate's own coverage). Returns the frontmatter keys that may flip after admission, or undefined
+// when the path is not a layer-contract frozen ledger entry. Each store keys off its OWN contract
+// — the incident case bar is never forced onto the build ADR store and the reverse (decision 4 /
+// BS-0012): the build ADR flips status/superseded-by/converged-into, the incident belief a human
+// verdict. `selfDescribing` is the set of tenant store dirs shipping their OWN SCHEMA (in the base
+// or the working tree): those are owned by their own validator, so the generic layer contract must
+// NOT be applied to them — keeping this gate's ownership consistent with discovery's exclusion.
+function frozenContractForPath(path: string, selfDescribing: ReadonlySet<string>): readonly string[] | undefined {
+  const name = basename(path);
+  // tenant-build's ADR store, bound to its exact tree (BS-0019): ADR-nnnn (exact four digits,
+  // never widened — loose-acceptance). This byte-immutability gate is what `adr check` (shape
+  // only) does not itself run.
+  if (path.startsWith('tenant-build/corpus/decisions/') && /^ADR-\d{4}\.md$/.test(name)) {
+    return ['status', 'superseded-by', 'converged-into'];
+  }
+  // Layer ledgers (decisions, beliefs) under any corpus root — the root scaffold or a tenant
+  // instance that INHERITS the layer D-/B- contract (a tenant store with its own SCHEMA is
+  // self-describing and owned by its own validator, so it is excluded here).
+  const m = /^((?:corpus|tenant-[^/]+\/corpus)\/(decisions|beliefs))\/[^/]+$/.exec(path);
+  if (m && m[1] !== undefined && m[2] !== undefined) {
+    if (selfDescribing.has(m[1])) return undefined;
+    const store = m[2] as StoreId;
+    if (!isEntryFile(store, name)) return undefined;
+    return store === 'beliefs' ? ['status', 'superseded-by', 'verdict'] : ['status', 'superseded-by'];
+  }
+  return undefined;
+}
+
+// The tenant store dirs that ship their OWN SCHEMA.md — in the working tree OR the base commit,
+// so a store deleted by this change is still recognized as self-describing. The root scaffold is
+// the layer definition, never self-describing. `dirs` is the frozen pathspec (store directories).
+function selfDescribingStoreDirs(root: string, base: string, dirs: string[]): Set<string> {
+  const out = new Set<string>();
+  for (const dir of dirs) {
+    if (dir.startsWith('corpus/')) continue; // the root scaffold defines the layer contract
+    const schema = `${dir}/SCHEMA.md`;
+    if (existsSync(join(root, schema)) || gitShow(root, base, schema) !== undefined) out.add(dir);
+  }
+  return out;
+}
+
+// The git pathspec for the frozen check, STABLE across this change: corpus (the layer) always,
+// plus every tenant corpus tree present in the working tree OR the base commit. Deriving it from
+// the base too (not the working tree alone) is what keeps a deletion from removing its own store
+// from scrutiny — classification by convention then filters each returned path to frozen entries.
+function frozenPathspec(root: string, base: string): string[] {
+  const roots = new Set<string>(['corpus']);
+  let names: string[] = [];
+  try {
+    names = readdirSync(root);
+  } catch {
+    /* not readable — the corpus scaffold below still covers the layer */
+  }
+  for (const name of names) if (name.startsWith('tenant-') && isDir(join(root, name, 'corpus'))) roots.add(`${name}/corpus`);
+  for (const name of gitTopLevelNames(root, base)) if (name.startsWith('tenant-')) roots.add(`${name}/corpus`);
+  const dirs: string[] = [];
+  for (const r of [...roots].sort()) for (const store of FROZEN_STORES) dirs.push(`${r}/${store}`);
+  return dirs;
+}
+
+// Top-level names in a commit's tree — used to find tenant trees that exist in the base but were
+// deleted from the working tree. Empty on any git error (the caller degrades to working-tree scope).
+function gitTopLevelNames(root: string, commit: string): string[] {
+  try {
+    return git(root, ['ls-tree', '--name-only', commit]).split('\n').filter((l) => l.length > 0);
+  } catch {
+    return [];
+  }
+}
+
 // R4 — frozen-path immutability. A ledger entry admitted before this branch is byte-frozen
 // except for the sanctioned lifecycle fields; deletion or rename of one is a violation.
 function frozenPath(ctx: Ctx): RuleResult {
@@ -554,7 +607,7 @@ function frozenPath(ctx: Ctx): RuleResult {
     ]);
   }
   const findings: Finding[] = [];
-  const paths = FROZEN_STORES.map((s) => `corpus/${s}`);
+  const paths = frozenPathspec(ctx.root, base);
 
   // BS-0023 (self-referential-baseline): frozenPath compares the base commit against the
   // WORKING TREE. When the base resolves to HEAD, that catches uncommitted edits (the normal
@@ -577,22 +630,28 @@ function frozenPath(ctx: Ctx): RuleResult {
       },
     ]);
   }
-  const baseEntries = lsTreeFiles(ctx.root, base, paths).filter((p) => {
-    const store = p.split('/')[1];
-    return store !== undefined && isAdmittedFilename(store, basename(p));
-  });
-
-  for (const path of baseEntries) {
-    const store = path.split('/')[1];
-    if (store === undefined) continue;
+  const selfDescribing = selfDescribingStoreDirs(ctx.root, base, paths);
+  for (const path of lsTreeFiles(ctx.root, base, paths)) {
+    const mutableKeys = frozenContractForPath(path, selfDescribing);
+    if (mutableKeys === undefined) continue; // not a layer-contract frozen ledger entry
     const baseText = gitShow(ctx.root, base, path);
     if (baseText === undefined) continue;
-    if (!existsSync(join(ctx.root, path))) {
+    // Compare the type WITHOUT following symlinks: a frozen entry is a tracked regular file, so a
+    // gone path is a deletion and a path replaced by a symlink or directory is a type change — both
+    // violations. lstat (not existsSync, which follows links) also keeps read() below off a symlink
+    // target or a directory, where readFileSync would silently follow or throw EISDIR and abort lint.
+    let stat;
+    try {
+      stat = lstatSync(join(ctx.root, path));
+    } catch {
       findings.push({ rule: 'frozen-path', file: path, severity: 'error', message: 'frozen ledger entry deleted or renamed — supersede in place, never remove' });
       continue;
     }
-    const headText = read(ctx.root, path);
-    const diff = frozenDelta(store, baseText, headText);
+    if (!stat.isFile()) {
+      findings.push({ rule: 'frozen-path', file: path, severity: 'error', message: 'frozen ledger entry replaced by a symlink or directory — supersede the file in place, never replace it' });
+      continue;
+    }
+    const diff = frozenDelta(mutableKeys, baseText, read(ctx.root, path));
     if (diff) findings.push({ rule: 'frozen-path', file: path, severity: 'error', message: diff });
   }
   return ok(findings);
@@ -600,31 +659,46 @@ function frozenPath(ctx: Ctx): RuleResult {
 
 // Returns a message if the head text changed a frozen part of the entry, else null. The
 // body is byte-frozen; frontmatter lines other than the store's mutable keys are frozen.
-function frozenDelta(store: string, baseText: string, headText: string): string | null {
-  const mutable = MUTABLE_FROZEN_KEYS[store] ?? [];
+function frozenDelta(mutable: readonly string[], baseText: string, headText: string): string | null {
   const base = readFrontmatter(baseText);
   const head = readFrontmatter(headText);
   if (base.body !== head.body) return 'the frozen body was edited — supersede the entry instead';
-  const frozenLines = (fmRaw: string) =>
-    fmRaw
-      .split('\n')
-      .filter((l) => {
-        const key = /^([A-Za-z0-9_-]+)\s*:/.exec(l);
-        return !(key && key[1] !== undefined && mutable.includes(key[1]));
-      })
-      .join('\n');
-  if (frozenLines(base.raw) !== frozenLines(head.raw)) {
+  if (stripMutableKeys(base.raw, mutable) !== stripMutableKeys(head.raw, mutable)) {
     return `frozen frontmatter changed — only ${mutable.join(', ')} may change in place`;
   }
   return null;
+}
+
+// Drop each mutable top-level key AND its full value from the frontmatter, so what remains is
+// the byte-frozen part. A mutable value may span lines (a YAML list like `converged-into` on the
+// build ADR store), so the key's continuation lines are dropped with it — a line-only filter
+// would freeze the list items and reject a sanctioned convergence. A continuation is an indented
+// line, a blank line, OR a block-sequence item at column zero (`- ADR-0009`): js-yaml accepts a
+// sequence directly under a mapping key with no extra indentation, so that form must be
+// recognized too (parse-fidelity — an indentationless list is still the mutable value).
+function stripMutableKeys(fmRaw: string, mutable: readonly string[]): string {
+  const kept: string[] = [];
+  let inMutableBlock = false;
+  for (const line of fmRaw.split('\n')) {
+    const topKey = /^([A-Za-z0-9_-]+)\s*:/.exec(line);
+    if (topKey && topKey[1] !== undefined) {
+      inMutableBlock = mutable.includes(topKey[1]);
+      if (!inMutableBlock) kept.push(line);
+      continue;
+    }
+    // continuation of the dropped value: indented, blank, or a column-0 sequence item
+    if (inMutableBlock && (/^\s/.test(line) || /^-(\s|$)/.test(line) || line.trim() === '')) continue;
+    inMutableBlock = false;
+    kept.push(line);
+  }
+  return kept.join('\n');
 }
 
 // R5 — no duty language in a decision body. The duty hook belongs to rules; a decision
 // constrains, it does not fire (decisions/SCHEMA, LANGUAGE.md mechanical checks).
 function noDutyLanguage(ctx: Ctx): RuleResult {
   const findings: Finding[] = [];
-  for (const file of entryFilesOf(ctx.root, 'decisions')) {
-    const relPath = `corpus/decisions/${file}`;
+  for (const relPath of layerEntryFiles(ctx.root, 'decisions')) {
     const text = stripCodeSpans(read(ctx.root, relPath));
     const m = /\bfires-when\b/.exec(text);
     if (m) findings.push({ rule: 'no-duty-language', file: relPath, line: lineAt(text, m.index), severity: 'error', message: "duty language 'fires-when' in a decision body — a decision constrains, a rule fires" });
@@ -804,6 +878,13 @@ function escapesValid(ctx: Ctx): RuleResult {
 // layer file naming a tenant term is a leak. Tenant vocabulary is DERIVED (Art. 8), not
 // hand-listed. The generated index region inside store skills is exempt — it is a
 // legitimate derived projection of tenant entries.
+//
+// tenant-build is exempt from this rule by construction, and deliberately so: its subject IS
+// the layer, so its ADRs legitimately name corpus-lint, index-gen, and the seam. tenant→layer
+// references are always allowed; only layer→tenant is banned. So tenant-build is neither a
+// SOURCE of derived tenant vocabulary (tenantVocabulary reads only the incident tenant) nor a
+// scanned LAYER file (layerFiles walks the root layer trees, not tenant-*/). The exemption
+// binds to the tenant tree itself, never to a marker a file could wear (BS-0019).
 function checkSeam(ctx: Ctx): RuleResult {
   const terms = tenantVocabulary(ctx.root);
   if (terms.length === 0) {
@@ -905,7 +986,7 @@ function escapeRe(s: string): string {
 // `top-dir/…/file.ext` under a known layer root. Fenced code blocks are illustrative and
 // exempt; entry-file placeholders (`…-nnnn.md`) and angle-bracket templates are not real
 // paths. It checks existence, not that the target's content is correct.
-const REF_ROOTS = ['corpus', 'skills', 'roles', 'tools', 'tenant-incident'];
+const REF_ROOTS = ['corpus', 'skills', 'roles', 'tools', 'tenant-incident', 'tenant-build'];
 const ABS_LINK_RE = /\]\((\/[A-Za-z0-9._/-]+)(#[^)]*)?\)/g;
 const BARE_PATH_RE = new RegExp(
   '`((?:' + REF_ROOTS.join('|') + ')/[A-Za-z0-9._/-]+\\.(?:md|sh|ts|yml|yaml))`',
@@ -969,6 +1050,28 @@ function refsResolve(ctx: Ctx): RuleResult {
   return ok(findings);
 }
 
+// R13 — cross-root id uniqueness. Multi-root discovery admits the canonical filename from every
+// corpus root, so an id minted under two roots resolves to two entries — an ambiguous record set
+// the index would render as two identical rows and every gate reading it would accept. A canonical
+// id must resolve to exactly one entry path; the finding names every path that claims the id.
+function uniqueId(ctx: Ctx): RuleResult {
+  const findings: Finding[] = [];
+  for (const store of ENTRY_STORES) {
+    for (const [id, paths] of admittedById(ctx.root, store)) {
+      if (paths.length < 2) continue;
+      for (const p of paths) {
+        findings.push({
+          rule: 'unique-id',
+          file: p,
+          severity: 'error',
+          message: `id '${id}' is claimed by ${paths.length} entries across corpus roots (${paths.join(', ')}) — an id must resolve to one entry`,
+        });
+      }
+    }
+  }
+  return ok(findings);
+}
+
 // ── shared collectors ──
 
 function collect(findings: Finding[], rule: string, file: string, text: string, re: RegExp, message: string, severity: Severity): void {
@@ -988,15 +1091,16 @@ export const RULES: Rule[] = [
   { name: 'five-slot', run: fiveSlot, residue: ['checks slot presence and count, not that a section says anything true, that ≥2 warrant IDs are real and cross-surface, or that a falsifier tests the right quantity.', "moot-when (the decisions/rules retirement slot) presence is NOT enforced — it may be legitimately absent (a rule may exit by coverage migration); disclosed, and flagged for the SCHEMA author."] },
   { name: 'tombstone', run: tombstone, residue: ['checks a successor pointer is present on retirement, not that the pointed-to entry exists or is the right successor.'] },
   { name: 'constitution-cap', run: constitutionCap, residue: ['counts articles by marker; does not verify eviction was actually performed, only the resulting count. Targets the shipped skill, never planning/.'] },
-  { name: 'frozen-path', run: frozenPath, residue: ['freezes body bytes and non-lifecycle frontmatter against the merge-base; does not verify a status flip was warranted or that a successor exists. UNCHECKED when no base ref resolves, or when the resolved base equals HEAD (a self-compare — see skips) — CI must pass the pre-change base per event.'] },
+  { name: 'frozen-path', run: frozenPath, residue: ['freezes body bytes and non-lifecycle frontmatter against the merge-base, per store, across every corpus root (layer ledgers and the build ADR store, each on its own mutable-key contract); does not verify a status flip was warranted or that a successor exists. UNCHECKED when no base ref resolves, or when the resolved base equals HEAD (a self-compare — see skips) — CI must pass the pre-change base per event.'] },
   { name: 'no-duty-language', run: noDutyLanguage, residue: ["keys on the literal 'fires-when'; duty phrasing written without that token (e.g. 'always check…') is review judgment."] },
-  { name: 'banned-tell', run: bannedTell, residue: ['lexical match; cannot distinguish a genuine tell from a rare legitimate word — common-word tells are non-failing warnings. LANGUAGE.md’s L1 tables and quoted examples are excluded (it defines the tells); its prose is still scanned for hard tells.'] },
+  { name: 'banned-tell', run: bannedTell, residue: ['lexical match over layer prose, the build ADR store, and incident-tenant *.md (fixtures excluded); cannot distinguish a genuine tell from a rare legitimate word — common-word tells are non-failing warnings. LANGUAGE.md’s L1 tables and quoted examples are excluded (it defines the tells); its prose is still scanned for hard tells.'] },
   { name: 'date-format', run: dateFormat, residue: ['flags malformed date shapes; does not check a date is real, correct, or that a needed date is present. A capitalized month word before a number may false-positive.'] },
   { name: 'do-dont', run: doDontPairing, residue: ['checks pairing and adjacency across SCHEMAs, skill packs, and role templates, not that a Don’t names a real, non-vacuous overshoot (LANGUAGE.md L3’s own residue).'] },
   { name: 'readme-kind', run: readmeKind, residue: ['checks the register/ledger declaration is present, not that the store behaves as declared.'] },
   { name: 'escapes', run: escapesValid, residue: ['checks escape syntax other(<what>), not that the escape was the right call over a named term.'] },
-  { name: 'refs-resolve', run: refsResolve, residue: ['over corpus/skills/roles prose and tools/*.md protocols, checks repo-root-absolute markdown links and bare code-span layer paths resolve (and reject `..`); does not check the target content is right, nor catch a path named in prose without link or code-span syntax. Fenced code and `…-nnnn.md` placeholders are exempt.'] },
-  { name: 'check-seam', run: checkSeam, residue: ['greps a DERIVED tenant-term set; cannot catch tenant knowledge expressed without a registered term (paraphrase), and coverage grows only as the vocabulary does. A no-op until the tenant grows terms/scenarios. Excludes *.test.ts — the suite carries tenant terms as fixtures and is not the shipped layer.'] },
+  { name: 'refs-resolve', run: refsResolve, residue: ['over layer prose (corpus/skills/roles), both tenant trees, and tools/*.md protocols, checks repo-root-absolute markdown links and bare code-span layer paths resolve (and reject `..`); does not check the target content is right, nor catch a path named in prose without link or code-span syntax. Fenced code and `…-nnnn.md` placeholders are exempt.'] },
+  { name: 'check-seam', run: checkSeam, residue: ['greps a DERIVED tenant-term set; cannot catch tenant knowledge expressed without a registered term (paraphrase), and coverage grows only as the vocabulary does. A no-op until the tenant grows terms/scenarios. Excludes *.test.ts (fixtures) and the tenant-build tree (its subject is the layer — tenant→layer references are allowed).'] },
+  { name: 'unique-id', run: uniqueId, residue: ['checks that each admitted id resolves to one entry path across all corpus roots; does not check the id was minted correctly or that its content is right. Keyed on the admitted-filename shape, so a draft (no minted id) is out of scope.'] },
 ];
 
 const GLOBAL_RESIDUE = [
