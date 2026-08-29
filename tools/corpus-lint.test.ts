@@ -571,6 +571,12 @@ test('derived-quantity: a recency/size literal warns; a case-derived bound and L
   withCorpus({ 'skills/x/SKILL.md': '# x\n\nBound the query to a 24h cutoff.\n' }, (root) => {
     assert.ok(warnings(run(root, 'derived-quantity')).some((w) => /recency\/size literal/.test(w.message)), 'a 24h cutoff warns');
   });
+  // "the last 24 hours" matches both patterns (RECENCY whole, CUTOFF on "24 hours" inside it) —
+  // one literal is one cue, so it warns exactly once, not twice (Qodo #19 dedup)
+  withCorpus({ 'skills/x/SKILL.md': '# x\n\nSearch the last 24 hours for a matching incident.\n' }, (root) => {
+    const w = warnings(run(root, 'derived-quantity')).filter((f) => f.file === 'skills/x/SKILL.md');
+    assert.equal(w.length, 1, 'an overlapping literal warns once: ' + JSON.stringify(w));
+  });
   // the bound named by the case it derives from — the fixed form is gone, nothing to flag
   withCorpus({ 'skills/x/SKILL.md': '# x\n\nSearch around the onset, across the symptom window.\n' }, (root) => {
     assert.deepEqual(run(root, 'derived-quantity'), [], 'a case-derived bound does not warn');

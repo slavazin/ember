@@ -1084,14 +1084,34 @@ const CUTOFF_LITERAL = /\b\d+\s*-?\s*(?:h|hr|hrs|hour|hours)\b|\b\d+\s*-?\s*(?:d
 
 function derivedQuantity(ctx: Ctx): RuleResult {
   const findings: Finding[] = [];
+  const message =
+    'recency/size literal — derive the bound from the case the procedure names, or state it as a fixed fact when the case does not touch it (LANGUAGE.md reference discipline)';
   for (const relPath of languageGovernedFiles(ctx.root)) {
     // LANGUAGE.md defines this pattern in its own examples ("the last day", "24h"); scanning it
     // flags the rule's own specification (self-match, BS-0004/0022). Its examples are quoted.
     if (relPath === 'corpus/LANGUAGE.md') continue;
     const text = stripCodeSpans(read(ctx.root, relPath));
-    const message =
-      'recency/size literal — derive the bound from the case the procedure names, or state it as a fixed fact when the case does not touch it (LANGUAGE.md reference discipline)';
-    for (const re of [RECENCY_LITERAL, CUTOFF_LITERAL]) collect(findings, 'derived-quantity', relPath, text, re, message, 'warn');
+    // The two patterns overlap: "the last 24 hours" matches RECENCY_LITERAL whole and
+    // CUTOFF_LITERAL on the "24 hours" inside it. One literal is one cue, so collect every
+    // match span and emit a single warning per overlapping cluster (Qodo #19) — a distinct,
+    // non-overlapping literal still warns on its own.
+    const spans: Array<[number, number]> = [];
+    for (const re of [RECENCY_LITERAL, CUTOFF_LITERAL]) {
+      for (const m of text.matchAll(re)) {
+        const start = m.index ?? 0;
+        spans.push([start, start + m[0].length]);
+      }
+    }
+    spans.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    let coveredEnd = -1;
+    for (const [start, end] of spans) {
+      if (start < coveredEnd) {
+        coveredEnd = Math.max(coveredEnd, end);
+        continue; // overlaps a literal already reported at this location
+      }
+      findings.push({ rule: 'derived-quantity', file: relPath, line: lineAt(text, start), severity: 'warn', message });
+      coveredEnd = end;
+    }
   }
   return ok(findings);
 }
