@@ -61,7 +61,10 @@ git -C "$REPO_ROOT" fetch -q origin main
 # temp branch first; the real name is derived from the trailers after apply
 git -C "$REPO_ROOT" worktree add -q -b "tmp-deposit-$$" "$WT" origin/main
 CREATED_BRANCH="tmp-deposit-$$"
-git -C "$WT" am --3way "$PATCH"
+# Feed the mbox on stdin: the `< "$PATCH"` redirection is resolved by THIS shell
+# (the caller's cwd), so the patch path never has to be interpreted from inside the
+# `git -C "$WT"` worktree. ($PATCH is also absolutised above — belt and suspenders.)
+git -C "$WT" am --3way < "$PATCH"
 
 # --- guard: EVERY applied commit must be a complete signed agent deposit ------
 # `git am` applies the whole mbox, so a multi-commit series could smuggle an
@@ -120,10 +123,11 @@ Produced by the **incident-responder** agent in a Daytona sandbox; the patch was
 applied on the host and this PR opened via \`tools/patch-to-pr.sh\` (ADR-0009).
 The scoped push token stays on the host; the sandbox never authenticates outward.
 
-The merge of this PR is the human gate that admits the entry and mints its id
-(Art. 2 / ADR-0007). **Admit with a merge commit, not a squash** — a squash
-collapses the candidate commit author and \`Incident-*\` trailers, the durable
-markers this deposit is signed with (ADR-0015).
+The merge of this PR is the human gate that admits the entry (Art. 2 / ADR-0007);
+the incident id is already fixed in the commit's \`Incident-Id\` trailer, not minted
+by the merge. **Admit with a merge commit, not a squash** — a squash collapses the
+candidate commit author and \`Incident-*\` trailers, the durable markers this deposit
+is signed with (ADR-0015).
 
 Incident-Id: ${INCIDENT_ID}
 Incident-Class: ${INCIDENT_CLASS}
