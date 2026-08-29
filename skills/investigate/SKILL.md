@@ -75,6 +75,12 @@ prediction registered ahead of its result, not one fitted to it; the frozen
 forecast is a dated record a later reader checks against the probe's reading to
 see whether the diagnosis was called before the probe or after.
 
+Recon's signals are observations of the surface as it stands, and the forecast is
+built from them — they precede it by design. What the forecast must precede is the
+**probe**: the hypothesis test whose result, seen first, would let the diagnosis
+be fitted to it. An observation reads what already holds; a probe runs the
+experiment the frozen forecast predicts.
+
 **Do:** freeze the forecast before the probe runs — a diagnosis and the reading
 that would falsify it, dated where it is written.
 **Don't:** don't record the forecast after reading the probe; a prediction fitted
