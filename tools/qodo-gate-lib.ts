@@ -16,6 +16,15 @@
 /** A severity is gating ("High or above") when it is neither Low nor Medium. */
 const NON_GATING = new Set(['low', 'medium']);
 
+/** The exact trusted Qodo principal. A substring match (e.g. /qodo/i) is spoofable — a
+ * commenter whose login merely contains "qodo" could supply a forged verdict or findings. */
+export const QODO_BOT_LOGIN = 'qodo-code-review[bot]';
+
+/** True only for the exact Qodo bot login — never a name fragment. */
+export function isQodoBot(login: string | undefined): boolean {
+  return login === QODO_BOT_LOGIN;
+}
+
 /** A Qodo inline finding: severity + title from the inline comment, plus its anchor. */
 export interface InlineFinding {
   title: string;
@@ -144,14 +153,65 @@ export function parseSummary(commentBody: string): Summary {
 
 /**
  * Join the two sources: return the inline findings that are (a) gating severity and
- * (b) still open per the summary. A finding the summary does not mention is treated
- * as open — the conservative choice, since silence is not a resolution.
+ * (b) still open per the summary. The join is by normalized title, which is lossy — so
+ * a gating finding is suppressed as resolved ONLY when the match is unambiguous on both
+ * sides (exactly one summary entry and one inline finding share the key) and that summary
+ * entry is resolved. Any ambiguity (duplicate/colliding titles either side), an
+ * unresolved occurrence, or a title the summary never mentions leaves the finding open —
+ * so a resolved item can never hide a distinct open High item, and silence is not a
+ * resolution.
  */
 export function openGatingFindings(inline: readonly InlineFinding[], summary: Summary): InlineFinding[] {
-  const resolvedTitles = new Set(
-    summary.findings.filter((f) => f.resolved).map((f) => normalizeTitle(f.title)),
-  );
-  return inline.filter((f) => f.gating && !resolvedTitles.has(normalizeTitle(f.title)));
+  const summaryByKey = new Map<string, { count: number; allResolved: boolean }>();
+  for (const f of summary.findings) {
+    const k = normalizeTitle(f.title);
+    const cur = summaryByKey.get(k);
+    if (cur) {
+      cur.count += 1;
+      cur.allResolved = cur.allResolved && f.resolved;
+    } else {
+      summaryByKey.set(k, { count: 1, allResolved: f.resolved });
+    }
+  }
+  const inlineKeyCount = new Map<string, number>();
+  for (const f of inline) {
+    const k = normalizeTitle(f.title);
+    inlineKeyCount.set(k, (inlineKeyCount.get(k) ?? 0) + 1);
+  }
+  return inline.filter((f) => {
+    if (!f.gating) return false;
+    const k = normalizeTitle(f.title);
+    const s = summaryByKey.get(k);
+    const unambiguous = s !== undefined && s.count === 1 && (inlineKeyCount.get(k) ?? 0) === 1;
+    const resolved = unambiguous && s.allResolved;
+    return !resolved; // keep open unless the match is unambiguous AND resolved
+  });
+}
+
+/**
+ * The number of gate remediation rounds this loop has run, derived from the tool's own
+ * machine-owned trigger markers on the PR — NOT from every `/agentic_review` mention.
+ * Counting arbitrary substring matches would let old manual runs or unrelated mentions
+ * inflate the round and exhaust the bound on the first cycle.
+ */
+export function countGateMarkers(commentBodies: readonly string[], marker: string): number {
+  return commentBodies.filter((b) => b.includes(marker)).length;
+}
+
+/**
+ * Flatten `gh api --paginate --slurp` output — an array with one page-array per page —
+ * into a single flat array. Paginated `gh api` without `--slurp` emits one JSON value
+ * per page, which is not a single parseable document; `--slurp` wraps the pages, and
+ * this undoes that wrapping.
+ */
+export function flattenPages<T>(raw: unknown): T[] {
+  if (!Array.isArray(raw)) throw new Error('expected an array of pages from gh --slurp');
+  const out: T[] = [];
+  for (const page of raw) {
+    if (Array.isArray(page)) out.push(...(page as T[]));
+    else out.push(page as T); // defensive: a non-array page element
+  }
+  return out;
 }
 
 /**

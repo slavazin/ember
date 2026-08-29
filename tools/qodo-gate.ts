@@ -21,6 +21,9 @@ import {
   type RawInlineComment,
   buildRemediationSeed,
   classify,
+  countGateMarkers,
+  flattenPages,
+  isQodoBot,
   openGatingFindings,
   parseInlineFindings,
   parseSummary,
@@ -31,6 +34,11 @@ const DEFAULT_BASE_URL = 'http://localhost:8790';
 const DEFAULT_AGENT = 'incident-responder';
 const DEFAULT_MAX_ROUNDS = 2;
 const TRIGGER = '/agentic_review';
+// A hidden marker the gate stamps on its own trigger comments, so the round count reflects
+// this loop's cycles — not historical or manual `/agentic_review` posts. Qodo still fires on
+// the `/agentic_review` line; the marker is inert to it.
+const GATE_MARKER = '<!-- qodo-gate-cycle -->';
+const TRIGGER_BODY = `${TRIGGER}\n\n${GATE_MARKER}`;
 const POLL_INTERVAL_MS = 15_000;
 const POLL_TIMEOUT_MS = 360_000; // ~6 min; Qodo is ~1–5 min and variable
 
@@ -101,13 +109,18 @@ function gh(args: string[]): string {
   }
 }
 
-function ghJson<T>(args: string[]): T {
-  const raw = gh(args);
+/** GET a paginated list endpoint as one flat typed array. Uses `--slurp` (which wraps each
+ * page as an array element) instead of raw `--paginate`, whose concatenated per-page JSON is
+ * not a single parseable document — the bug that made multi-page PRs exit inconclusive. */
+function ghApiList<T>(path: string): T[] {
+  const raw = gh(['api', path, '--paginate', '--slurp']);
+  let parsed: unknown;
   try {
-    return JSON.parse(raw) as T;
+    parsed = JSON.parse(raw);
   } catch {
-    return fail(`could not parse JSON from: gh ${args.join(' ')}`);
+    return fail(`could not parse JSON from: gh api ${path} --paginate --slurp`);
   }
+  return flattenPages<T>(parsed);
 }
 
 function msg(cause: unknown): string {
@@ -122,19 +135,12 @@ interface IssueComment {
   user: { login: string };
 }
 
-function isQodo(login: string): boolean {
-  return /qodo/i.test(login);
-}
-
-/** The Qodo review summary comment (body contains "Code Review by Qodo"), latest if several. */
+/** The Qodo review summary comment (from the exact bot, body "Code Review by Qodo"), latest
+ * if several. Authenticating the exact principal stops a spoofed summary from being accepted. */
 function latestQodoSummary(comments: readonly IssueComment[]): IssueComment | undefined {
-  const summaries = comments.filter((c) => isQodo(c.user.login) && /Code Review by Qodo/.test(c.body));
+  const summaries = comments.filter((c) => isQodoBot(c.user.login) && /Code Review by Qodo/.test(c.body));
   if (summaries.length === 0) return undefined;
   return summaries.reduce((a, b) => (a.updated_at >= b.updated_at ? a : b));
-}
-
-function countTriggers(comments: readonly IssueComment[]): number {
-  return comments.filter((c) => c.body.includes(TRIGGER)).length;
 }
 
 async function createRemediationSession(args: Args, seed: string): Promise<string> {
@@ -170,23 +176,25 @@ async function main(argv: string[]): Promise<number> {
   // Baseline: the summary comment's updated_at before we re-trigger, so we can tell a
   // fresh verdict from a stale one (Qodo updates its verdict IN PLACE — poll, never
   // watch for a "new review" event).
-  const before = ghJson<IssueComment[]>(['api', `repos/${args.repo}/issues/${args.pr}/comments`, '--paginate']);
+  const issuesPath = `repos/${args.repo}/issues/${args.pr}/comments`;
+  const before = ghApiList<IssueComment>(issuesPath);
   const baseline = latestQodoSummary(before)?.updated_at ?? '';
 
   if (args.dryRun) {
-    out(`qodo-gate: [dry-run] would post "${TRIGGER}" to PR #${args.pr} (${args.repo}) on branch ${branch}`);
+    out(`qodo-gate: [dry-run] would post "${TRIGGER}" (+ cycle marker) to PR #${args.pr} (${args.repo}) on branch ${branch}`);
   } else {
-    gh(['pr', 'comment', String(args.pr), '--repo', args.repo, '--body', TRIGGER]);
+    gh(['pr', 'comment', String(args.pr), '--repo', args.repo, '--body', TRIGGER_BODY]);
     out(`qodo-gate: posted ${TRIGGER} to PR #${args.pr}; awaiting Qodo verdict…`);
   }
 
   // Poll the summary comment until its updated_at moves past the baseline (or one first
   // appears). In dry-run, read the current verdict without waiting for a fresh one.
   let summaryComment: IssueComment | undefined;
+  let latestComments: IssueComment[] = before;
   const deadline = Date.now() + POLL_TIMEOUT_MS;
   for (;;) {
-    const now = ghJson<IssueComment[]>(['api', `repos/${args.repo}/issues/${args.pr}/comments`, '--paginate']);
-    const candidate = latestQodoSummary(now);
+    latestComments = ghApiList<IssueComment>(issuesPath);
+    const candidate = latestQodoSummary(latestComments);
     if (candidate && (args.dryRun || candidate.updated_at > baseline)) {
       summaryComment = candidate;
       break;
@@ -198,13 +206,14 @@ async function main(argv: string[]): Promise<number> {
     fail(`no Qodo verdict within ${Math.round(POLL_TIMEOUT_MS / 1000)}s — inconclusive, surface to human`);
   }
 
-  const inlineRaw = ghJson<RawInlineComment[]>(['api', `repos/${args.repo}/pulls/${args.pr}/comments`, '--paginate']);
-  const inline: InlineFinding[] = parseInlineFindings(inlineRaw.filter((c) => c.user?.login === undefined || isQodo(c.user.login)));
+  const inlineRaw = ghApiList<RawInlineComment>(`repos/${args.repo}/pulls/${args.pr}/comments`);
+  const inline: InlineFinding[] = parseInlineFindings(inlineRaw.filter((c) => isQodoBot(c.user?.login)));
   const summary = parseSummary(summaryComment.body);
   const openHigh = openGatingFindings(inline, summary);
 
-  const after = ghJson<IssueComment[]>(['api', `repos/${args.repo}/issues/${args.pr}/comments`, '--paginate']);
-  const round = countTriggers(after);
+  // Round = this gate's own trigger markers on the PR, not every /agentic_review mention.
+  // In dry-run nothing was posted, so add the marker this run would have added.
+  const round = countGateMarkers(latestComments.map((c) => c.body), GATE_MARKER) + (args.dryRun ? 1 : 0);
 
   const decision = classify(openHigh, round, args.maxRounds);
   out(

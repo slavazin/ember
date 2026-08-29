@@ -2,9 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as lib from './qodo-gate-lib.ts';
 import {
+  QODO_BOT_LOGIN,
   buildRemediationSeed,
   classify,
+  countGateMarkers,
+  flattenPages,
   isGatingSeverity,
+  isQodoBot,
   normalizeTitle,
   openGatingFindings,
   parseInlineFindings,
@@ -173,4 +177,50 @@ test('the gate library exposes no merge/admit action (never auto-merges)', () =>
   for (const name of Object.keys(lib)) {
     assert.doesNotMatch(name, /merge|admit|approve/i, `unexpected export ${name}`);
   }
+});
+
+// Qodo #23-1: identity must be the exact bot, not a spoofable name fragment.
+test('isQodoBot authenticates the exact bot login only', () => {
+  assert.equal(isQodoBot(QODO_BOT_LOGIN), true);
+  assert.equal(isQodoBot('qodo-code-review[bot]'), true);
+  assert.equal(isQodoBot('qodofake'), false);
+  assert.equal(isQodoBot('evil-qodo-impersonator'), false);
+  assert.equal(isQodoBot(undefined), false);
+});
+
+// Qodo #23-4: a resolved item must not hide a distinct open High with a colliding title.
+test('openGatingFindings keeps colliding titles open (ambiguous match is never suppressed)', () => {
+  // Two DISTINCT inline High findings normalize to the same key; the summary resolves one.
+  const dupA = highInlineBody; // "Adr draft id contradiction"
+  // Same title, materially different finding body → same normalized key, distinct bug.
+  const dupB = highInlineBody.replace('IDs are reserved at draft', 'A different underlying cause');
+  const summary = parseSummary('🐞 Bugs (1)\n  1.  Adr draft id contradiction ✓ Resolved 🐞 Bug');
+  const inlineFindings = parseInlineFindings([inline(dupA), inline(dupB)]);
+  // Ambiguous on the inline side → neither is suppressed by the single resolved summary entry.
+  assert.equal(openGatingFindings(inlineFindings, summary).length, 2);
+});
+
+test('openGatingFindings suppresses only an unambiguous, resolved match', () => {
+  const summary = parseSummary('🐞 Bugs (0)\n  1.  Adr draft id contradiction ✓ Resolved 🐞 Bug');
+  const inlineFindings = parseInlineFindings([inline(highInlineBody)]);
+  assert.equal(openGatingFindings(inlineFindings, summary).length, 0);
+});
+
+// Qodo #23-3: rounds derive from the gate's own markers, not arbitrary /agentic_review mentions.
+test('countGateMarkers counts only bodies carrying the machine-owned marker', () => {
+  const marker = '<!-- qodo-gate-cycle -->';
+  const bodies = [
+    '/agentic_review', // an old manual trigger — must NOT count
+    `/agentic_review\n\n${marker}`, // a gate cycle — counts
+    'unrelated comment mentioning /agentic_review in prose', // must NOT count
+    `re-run\n${marker}`, // counts
+  ];
+  assert.equal(countGateMarkers(bodies, marker), 2);
+});
+
+// Qodo #23-2: paginated gh output is an array of page-arrays; flatten to one flat array.
+test('flattenPages flattens an array of page arrays', () => {
+  assert.deepEqual(flattenPages<number>([[1, 2], [3], []]), [1, 2, 3]);
+  assert.deepEqual(flattenPages<number>([[1]]), [1]);
+  assert.throws(() => flattenPages<number>({ not: 'an array' }), /array of pages/);
 });
