@@ -1,0 +1,58 @@
+name: poison-message-b
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: jobs
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d jobs"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  worker-svc:
+    build: ./worker-svc
+    environment:
+      PGHOST: postgres
+      PGUSER: app
+      PGPASSWORD: app
+      PGDATABASE: jobs
+      HTTP_PORT: "9000"
+      WORK_MS: "100"
+      RETRY_BACKOFF_MS: "500"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - "CMD"
+        - "node"
+        - "-e"
+        - "require('http').get('http://localhost:9000/healthz',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    # Direct access to /debug/queue for probing head state during a diagnosis.
+    ports:
+      - "9102:9000"
+
+  # The normal workload — steady, modest, always on. Not a surge; it is the
+  # standing traffic the backlog is measured against.
+  producer:
+    build: ./producer
+    environment:
+      PGHOST: postgres
+      PGUSER: app
+      PGPASSWORD: app
+      PGDATABASE: jobs
+      RATE: "2"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      worker-svc:
+        condition: service_started

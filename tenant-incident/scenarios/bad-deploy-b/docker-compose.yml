@@ -1,0 +1,46 @@
+name: bad-deploy-b
+
+services:
+  pricing-svc:
+    build: ./pricing-svc
+    # BUILD selects which build runs. Default is the baseline (healthy); inject.sh
+    # recreates this service with BUILD=2026.09.09 to deploy the regression, and
+    # reset.sh recreates it with BUILD=2026.09.02 to roll back.
+    environment:
+      BUILD: ${BUILD:-2026.09.02}
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz',timeout=2).status==200 else 1)\""
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    # Direct access for probing /debug/version and /debug/deploys during a diagnosis.
+    ports:
+      - "3003:8000"
+
+  gateway:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      pricing-svc:
+        condition: service_healthy
+    ports:
+      - "8083:80"
+
+  # Steady traffic across a fixed cart mix. Off by default (profile "inject");
+  # inject.sh starts it before deploying the regression, so the same mix spans
+  # the onset.
+  loadgen:
+    build: ./loadgen
+    environment:
+      BASE: "http://gateway:80/price"
+      CARTS: "5"
+      RATE: "5"
+      REQ_TIMEOUT: "10"
+    depends_on:
+      gateway:
+        condition: service_started
+    profiles: ["inject"]
+    restart: "no"

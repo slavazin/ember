@@ -1,0 +1,10 @@
+{
+  "name": "checkout-svc",
+  "version": "1.0.0",
+  "private": true,
+  "description": "checkout service, deployable as build 2026.08.20 (baseline) or 2026.08.27 (regressed)",
+  "main": "app-2026.08.20.js",
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
