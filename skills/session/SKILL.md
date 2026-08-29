@@ -1,6 +1,6 @@
 ---
 name: session
-description: The fast-loop boot — load at session start to orient from the corpus, recover open work, and walk the planning latches. The close half is its own skill, `close`.
+description: The fast-loop boot — load at session start to orient from the corpus, resume any unfinished work, and walk the planning latches. The close half is its own skill, `close`.
 ---
 
 # session — the fast loop, boot half
@@ -15,8 +15,10 @@ context after implementation.
 ## Boot
 
 1. **Load the law.** Open the `constitution` skill before any planning.
-2. **Recover open work.** Read the close-out carried by the last merged pull
-   request, and the open branches and pull requests that carry unfinished work.
+2. **Resume unfinished work.** Read the open branches and pull requests that
+   carry work left un-merged, and resume it. Cross-session learning is not
+   recovered here — it is corpus-carried, loaded from the shape-matched stores
+   below; a session that finds nothing open still boots whole from the corpus.
    There is no session log and no carry-forward file — the pull request is the
    record, and git history is the trace.
 3. **Orient.** Declare the shape of the work in hand — the terms a store index or
@@ -35,6 +37,12 @@ is the scan the indexes exist to replace.
 **Don't:** don't treat the attestation as proof the consultation was honest — it
 proves only that the walk ran; the honesty of the consultation is permanent
 residue.
+
+**Do:** boot the whole picture from the corpus — a merged candidate is already an
+admitted entry in the shape-matched stores.
+**Don't:** don't reach back into a prior session's pull request to recover
+learning; learning is corpus-carried, and a merged request's payload is read from
+the stores, not from the request.
 
 ## Close
 
