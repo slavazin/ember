@@ -16,6 +16,64 @@ Load this at close, after implementation. It re-derives its inputs from the bran
 and the pull request, so an agent holding none of the implementation context can
 run it in full.
 
+## The close runs to completion (invariant)
+
+**The close completes every deposit step in one pass — it does not pause to ask
+the human whether to finish.** Recording dispositions, walking the retro lenses,
+writing the run's close facts into the report frontmatter, drafting and filing
+candidates through the `corpus-write` skill, walking the closing latches, and
+filing the pull request are the close's own work, run start to finish without a
+confirmation prompt. The environment supplies evidence, not permission to proceed.
+The one human gate in the loop is the merge of the filed pull request (Article 2),
+and that gate is reached by filing the pull request, not by stopping to ask whether
+to file it. The push is approval-gated at the tool boundary — that gate is the
+harness's, discharged when the push is attempted, not a question the close pauses
+on.
+
+An unattended close turns on this invariant: a close that halts mid-walk to
+confirm never reaches the pull request the next boot reads.
+
+**Do:** walk the close end to end and file the pull request in the same pass.
+**Don't:** don't halt mid-close to confirm whether to finish — the deposit steps
+are owed by the skill, and the human gate is the merge, not a mid-run approval.
+
+## Corpus reachability (invariant)
+
+**The corpus is ensured reachable before any corpus read.** Every `/corpus/…` path
+this skill reads — the lens language, the closing latch table — resolves through a
+repo-root symlink the sandbox does not carry by default, and the sandbox is
+recycled after an idle interval, dropping a corpus provisioned once at boot while
+the harness re-clones only the skills. So reachability is an **invariant
+re-ensured before each corpus-touching read**, never a boot-once step: discharge it
+with an idempotent guard that no-ops when the corpus already resolves and
+self-heals when a recycle has dropped it.
+
+    # `$EMBER_ORIGIN` is the ember repository the harness already clones skills from
+    [ -e /corpus/README.md ] || {
+      git clone --no-checkout --depth 1 --filter=blob:none "$EMBER_ORIGIN" /opt/tf/corpus-src
+      git -C /opt/tf/corpus-src sparse-checkout set corpus tenant-incident/corpus
+      git -C /opt/tf/corpus-src checkout
+      ln -sfn /opt/tf/corpus-src/corpus /corpus
+      ln -sfn /opt/tf/corpus-src/tenant-incident /tenant-incident
+    }
+
+The sparse set is `corpus/` **plus** `tenant-incident/corpus/`, and it excludes
+`tenant-incident/scenarios/`: the scenario is the environment, and an agent that
+can read the scenario reads the mechanism and the fix instead of investigating them
+— the environment supplies evidence, never the answer. The sparse set materializes
+only those two subtrees, so `/tenant-incident/scenarios` never resolves. This
+mirrors the harness's own per-sandbox skill self-heal.
+
+**Do:** re-ensure reachability with the idempotent guard before each corpus read —
+a no-op when `/corpus` resolves, a self-heal when a recycle has dropped it.
+**Don't:** don't provision the corpus once at boot and treat it as durable — the
+idle recycle drops the provisioned corpus while re-cloning the skills, so a
+boot-once step reads an empty `/corpus` on a later turn.
+
+**Do:** keep the sparse set scoped to `corpus/` plus `tenant-incident/corpus/`.
+**Don't:** don't widen the sparse set to `tenant-incident/scenarios/` — pulling the
+scenario into the agent's reach contaminates the diagnosis with the answer.
+
 ## The close-out is the pull request
 
 A session does not end without the close-out, and the close-out is the session's
@@ -79,6 +137,44 @@ a considered disposition, not a skipped step.
 **Don't:** don't narrow a lens to the incident's mechanics; the angle is the work
 as it presented, not a single service or symptom.
 
+## Write the run's close facts into the report frontmatter
+
+Beyond the human-readable dispositions in the pull-request record, the close writes
+the run's close facts into the YAML frontmatter of the diagnosis report — the same
+report `grade.sh` scores and the multi-run round runner reads through
+`parseReportMeta` in
+[/tenant-incident/experiments/run-round-lib.ts](/tenant-incident/experiments/run-round-lib.ts).
+`parseReportMeta` reads three fields off that frontmatter — `steps`, `disposition`,
+and `forecast_hit` — and folds them into the delta ledger; the close owns the two
+it does not already carry, named and spelled exactly as the runner reads them:
+
+- **`disposition:`** — the run's headline disposition, one of `applied`,
+  `considered-not-applicable`, or `fired-off-map` (verbatim, hyphenated as shown):
+  the disposition of the entry the run turned on — the corpus entry that bound the
+  diagnosis (`applied`), was consulted and set aside (`considered-not-applicable`),
+  or whose hook matched a shape the corpus does not cover (`fired-off-map`).
+- **`forecast_hit:`** — a boolean, `true` when the probe's reading confirmed the
+  diagnosis forecast frozen before the probe (the `investigate` skill freezes it),
+  `false` when the probe refuted it.
+
+    ---
+    incident: <incident-id>
+    steps: <n>
+    disposition: considered-not-applicable
+    forecast_hit: true
+    ---
+
+The field names and value spellings match the runner exactly: a `disposition:`
+outside the three values above, or a non-boolean `forecast_hit:`, is read as absent,
+and the run folds into the ledger with empty `applied`/`cna`/`fired_off_map`/
+`forecast_hit` cells — the run's evidence dropped without a warning.
+
+**Do:** write `disposition:` and `forecast_hit:` into the report frontmatter,
+spelled exactly as the runner reads them.
+**Don't:** don't leave them to be inferred from the report prose — the runner reads
+the frontmatter only, and an undeclared close fact is a blank ledger cell, not a
+derived one.
+
 ## 3. File candidates
 
 A **candidate** is an observation — surfaced by a lens or by a fired-off-map
@@ -88,7 +184,9 @@ five-slot contract for the entry stores; the term block for `vocabulary/`); the
 close-out drafts it in place through the `corpus-write` skill, handing it the
 incident's id and class so the signed deposit commit places the entry in the
 learning arc, and files it as a draft on the session's branch, riding this pull
-request. Admission — the human merge — admits it: a store that mints its id at
+request. `corpus-write` is a skill loaded by name — the harness materializes it at
+`/opt/tf/skills/corpus-write/`, alongside the other loaded skills — not a helper
+file under `/corpus`; load the skill, and do not search the corpus tree for it. Admission — the human merge — admits it: a store that mints its id at
 admission gains it then, a store that reserves its id at draft has carried it
 since filing, and a `vocabulary/` term is admitted as an id-less block, keyed by
 the term itself.

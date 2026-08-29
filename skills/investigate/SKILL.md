@@ -11,6 +11,27 @@ signals and ground them against the world, commits a diagnosis forecast before a
 probe, and tests every hypothesis in the sandbox. The diagnosis this produces is what a candidate fix is
 filed against, through the `corpus-write` skill.
 
+## The root drives the investigation (invariant)
+
+**The root selects the recon shapes and fans them out itself — it never asks the
+human or the environment which shape to run.** The environment is the source of
+*evidence* — logs, metrics, a probe reading requested by name — never the source
+of *strategy* or *execution*. Reading the surface, deciding which lenses it
+warrants, dispatching a recon subagent per shape, forming the diagnosis from the
+signals returned, and choosing the next probe are the root's own acts; handing any
+of them to the environment mistakes the evidence source for a party to the
+investigation and blurs the party line Article 3 draws.
+
+An unattended run turns on this invariant: a fan-out that waits on the environment
+to name its shapes never starts. The environment answers the questions the root
+poses about the surface; it does not tell the root which questions to pose.
+
+**Do:** pick the shapes and fan them out unprompted — read the surface, decide the
+lenses it warrants, and dispatch them without waiting for direction.
+**Don't:** don't ask the human or the environment which shape to run, or pause the
+fan-out for approval — a question about which lens to run mistakes the evidence
+source for the investigator, and stalls an unattended run.
+
 ## Fan recon across shapes
 
 Dispatch a **recon** subagent for each investigation shape the surface warrants,
