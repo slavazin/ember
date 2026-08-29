@@ -94,8 +94,8 @@ the two show the gates discriminate.
 
 - The latch-walk gate presumes a responder that records a latch-walk line; a
   correct pool diagnosis from another producer fails only that gate. The
-  canonical attestation format belongs to the `session` skill, and this grep
-  tracks it.
+  canonical attestation format lives in [/corpus/latches/README.md](/corpus/latches/README.md),
+  and this grep tracks it.
 - Scenario prose follows [/corpus/LANGUAGE.md](/corpus/LANGUAGE.md) by
   discipline; the corpus banned-tell lint does not yet range over `scenarios/`.
 - The stack runs under `docker compose` locally. Provisioning it into a Daytona

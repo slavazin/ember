@@ -127,6 +127,7 @@ forced into a near-miss term and never given a private synonym.
 | moot-when | a retirement condition: the event under which an entry's domain stops existing | falsifier — mootness retires without contradicting |
 | not-this | a hook's declared exclusions — shapes it matches but must not bind | exception, edge case |
 | trigger (revisit) | a world-state condition `{when, then, settled}` that re-opens a warrant | fires-when; reminder |
+| lens | a guiding question paired with its counterfactual — an angle on work done or to be done, and the challenge that keeps the answer honest | prompt, checklist item; a latch — a lens consults no single authority, it routes attention to an angle |
 | residue | what an entry's enforcement does not check, stated on the entry | limitation, disclaimer |
 | duty | the obligation a rule's payload carries, as narrow as is true | guideline, suggestion |
 | surface | a distinct area of the estate a duty can bind at (a service, a store, a workflow) | site is acceptable in prose; never "place", "area" |
@@ -177,6 +178,32 @@ vocabulary first, then latch on the name.
 one latch is an assumption smuggled across the bridge — the consumer parses
 it differently or not at all, and the divergence is undetectable. New terms
 enter through the lexicon's escape, then become latchable.
+
+## Lens language
+
+Governs every lens: the guiding questions a session or a subagent walks to
+view its work from a fixed angle — the retro lenses of the `close` skill, and
+the investigation shapes a recon subagent explores. A lens is an open
+question, not a consult-one-authority latch: it routes attention to an angle,
+and its answer is the walker's own, grounded in the work, not a store's
+payload.
+
+**Do: ship every lens with its counterfactual — the L3 pairing.** A lens is
+the angle question plus the challenge that names the answer's overshoot:
+"what went unnoticed?" pairs with "what was truly unforeseeable?"; "what rule
+would have helped?" pairs with "why would that rule not generalize?". The
+counterfactual is what filters a lens answer from slop before it becomes a
+candidate — an answer that cannot survive its own challenge is not filed.
+**Don't:** don't manufacture a vacuous counterfactual. "…or was it fine?"
+bounds nothing — the challenge must name the specific opposite error the
+angle steers a walker into, recognizable in the answer under review.
+
+**Do: address the lens to the reader, present and impersonal.** A lens is
+read by a future session holding only its own work; phrase the angle as the
+work presents, not as narration of what one session did.
+**Don't:** don't phrase a lens in the first person or past-session voice
+(L1) — "what did the run miss" narrates; "what went unnoticed that a store
+could have surfaced" is the reader-addressed form.
 
 ## Mechanical checks
 

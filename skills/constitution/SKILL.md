@@ -30,9 +30,10 @@ Proposing, examining, and investigating are distinct subagents; no subagent
 reviews its own output; the human is the only committing party.
 
 ## Article 4 — A session boots from the corpus and closes into it.
-A session boots from this constitution, the shape-matched stores, and the open
-branches and pull requests carrying unfinished work; it does not end without the
-close-out. Procedure: the `session` skill.
+A session boots from this constitution and the shape-matched stores — its
+cross-session memory is the admitted corpus, not a prior pull request — and
+resumes any work left un-merged on a branch; it does not end without the
+close-out. Procedure: the `session` skill (boot) and the `close` skill (close-out).
 
 ## Article 5 — Probes run in the sandbox only.
 Every hypothesis test runs in a sandbox; nothing speculative touches a live

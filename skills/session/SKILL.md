@@ -1,96 +1,71 @@
 ---
 name: session
-description: The fast-loop protocol — boot and close. Load at session start (boot obligation) and again before ending, to orient, walk the latch tables, and file dispositions and drafts.
+description: The fast-loop working-session protocol — orient from the corpus at start, resume any unfinished work, walk the planning latches, and keep the consultation record the close reads. The close-out is its own skill, `close`.
 ---
 
-# session — the fast loop
+# session — the fast loop, working-session half
 
-The per-session protocol: how a session boots from the corpus and closes back
-into it. Loaded by boot obligation at start, and again before close. Learning is
-corpus-carried, not thread-carried — a session that starts from an empty context
-recovers everything from the stores, so the boot and the close are the whole
-memory.
+The working session's protocol: how a session orients from the corpus at start,
+and the consultation record it keeps as it works. Loaded by boot obligation, after
+the constitution. Learning is corpus-carried, not thread-carried — a session that
+starts from an empty context recovers everything from the stores, so the boot and
+the close are the whole memory. The close-out half — dispositions, retro lenses,
+candidates — is the `close` skill, run from fresh context after implementation; it
+reads the consultation record the working session keeps.
 
 ## Boot
 
 1. **Load the law.** Open the `constitution` skill before any planning.
-2. **Recover open work.** Read the close-out carried by the last merged pull
-   request, and the open branches and pull requests that carry unfinished work.
+2. **Resume unfinished work.** Read the open branches and pull requests that
+   carry work left un-merged, and resume it. Cross-session learning is not
+   recovered here — it is corpus-carried, loaded from the shape-matched stores
+   below; a session that finds nothing open still boots whole from the corpus.
    There is no session log and no carry-forward file — the pull request is the
    record, and git history is the trace.
 3. **Orient.** Declare the shape of the work in hand — the terms a store index or
    a latch row can match against.
 4. **Walk the planning latches.** Poll each row of `corpus/latches/planning.md`
    against the work in hand and discharge the owed act of every row that fires;
-   leave the walk's `latch-walk:` attestation line in the work product (format
-   below).
+   leave the walk's `latch-walk:` line in the work product (format and cautions:
+   [/corpus/latches/README.md](/corpus/latches/README.md)).
 
 **Do:** declare the work-shape before opening any store — the shape is what the
 indexes and latch rows route on.
-**Don't:** don't open stores at random ahead of a declared shape; an unrouted
-read is the scan the indexes exist to replace.
+**Don't:** don't open stores at random ahead of a declared shape; an unrouted read
+is the scan the indexes exist to replace.
 
 **Do:** emit the planning walk's `latch-walk:` line in the work product.
 **Don't:** don't treat the attestation as proof the consultation was honest — it
 proves only that the walk ran; the honesty of the consultation is permanent
 residue.
 
+**Do:** boot the whole picture from the corpus — a merged candidate is already an
+admitted entry in the shape-matched stores.
+**Don't:** don't reach back into a prior session's pull request to recover
+learning; learning is corpus-carried, and a merged request's payload is read from
+the stores, not from the request.
+
+## Keep the consultation record
+
+As the session works, record each entry it consults into the work product on the
+branch — the entry's id and whether it was applied or considered — as the
+consultation happens. The planning latch walk starts this record; the work appends
+to it. This record is what the fresh-context close reads to disposition every
+consultation, including the considered-and-set-aside ones that leave no other
+trace on the branch. The close assigns the final disposition; the working session
+supplies the set.
+
+**Do:** append each consulted entry to the work product as it is consulted — while
+the context that holds it is still live.
+**Don't:** don't defer the record to the close; the close runs from fresh context
+and cannot recover a consultation the working session did not write down.
+
 ## Close
 
-A session does not end without the close-out, and the close-out is the session's
-pull request — the record the next boot reads. The session files this pull request
-whether or not it drafts a candidate entry; the dispositions and the closing
-attestation are content enough, and the push is approval-gated.
+The close half is its own protocol, run from fresh context after implementation:
+the `close` skill. A session does not end without the close-out it carries.
 
-1. **Record dispositions.** Into the pull request, record one disposition for
-   every entry the session consulted:
-   - **applied** — the entry bound the work and its payload was used.
-   - **considered-not-applicable** — the entry was consulted and set aside: its
-     `not-this` matched, or its payload did not bind the work in hand.
-   - **fired-off-map** — the entry's hook matched a work shape the corpus does
-     not cover; the fire surfaced a gap, and the observation is a promotion
-     candidate.
-2. **File candidates.** A candidate entry, when the session has one, is drafted
-   through the `corpus-write` skill and rides the same pull request. A draft
-   carries no id — admission mints it.
-3. **Walk the closing latches.** Poll each row of `corpus/latches/closing.md`
-   against the work in hand, discharge the owed act of every row that fires, and
-   leave the walk's `latch-walk:` line in the pull request.
-
-**Do:** file the session's pull request even when no candidate is drafted — the
-dispositions and closing attestation are a durable record on their own.
-**Don't:** don't skip the pull request on a quiet session; an unfiled close-out
-is state the next boot cannot recover.
-
-**Do:** record a disposition for every consulted entry — the dispositions are the
-telemetry the slow loop promotes from.
-**Don't:** don't leave a consulted entry undisposed; an unrecorded consultation
-is a signal lost forever.
-
-**Do:** file every candidate as a draft on the branch and let the human merge
-admit it.
-**Don't:** don't write to a permanent store directly — the merge is the only
-admitting write.
-
-## The latch walk
-
-A latch table is a register of rows ⟨fires-when → consult → owed act⟩ read whole
-at its walk point (see [/corpus/latches/README.md](/corpus/latches/README.md)).
-Walking polls each row against the work in hand; a row that fires owes its one
-act. A table holding only its header row owes an empty walk.
-
-The walk leaves one attestation line in the work product it governs — the
-diagnosis report for the planning walk, the pull request for the closing walk:
-`latch-walk: <table> @ <ref>`. `<table>` is the walked table (`planning.md` or
-`closing.md`); `<ref>` is a git-reachable reference to the session — its branch,
-commit, or pull request. The line is the floor gate's presence anchor, matched at
-line start: a walk that fires no row still emits it, and the rows that fired with
-the acts discharged are recorded after the line.
-
-**Do:** emit the `latch-walk:` line at each walk point, even when no row fired.
-**Don't:** don't reword the line's prefix or shape — the gate greps it at line
-start, and a reworded attestation is a walk the gate cannot see, a silent miss.
-
-**Do:** poll every row against the work in hand.
-**Don't:** don't skim a table because it rarely fires — a rarely-firing row can
-be the one that matters, and skimming is a silent miss.
+**Do:** run the `close` skill from fresh context once implementation is done — the
+close judges the work best without the implementer's context.
+**Don't:** don't fold the close back into the implementing turn; the fresh read is
+the point of the split.
