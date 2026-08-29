@@ -44,10 +44,42 @@ is a slogan, not an entry.
 
 ## Examination
 
-Spawn an **examiner** subagent, pasting [/roles/examiner.md](/roles/examiner.md)
-verbatim, followed by the draft entry's text frozen and unaltered
-(freeze-the-target). The examiner attacks the draft and returns a verdict-pending
-record; it never writes, and holds no stake in the entry's admission.
+Spawn an **examiner** subagent to attack the draft. Paste the template below
+verbatim, then append the draft entry's text frozen and unaltered
+(freeze-the-target). The examiner earns its dispatch by holding a perspective the
+drafting root cannot — it did not write the entry, so it reads the claims cold,
+and an unprimed reader catches an assumption the author no longer sees. The
+template sharpens that attack and travels with the dispatch, so the examiner
+never depends on a file resolving outside this skill; a subagent that receives a
+thinner brief still does useful work, and a missing template degrades the review
+rather than ending it.
+
+> You are an examiner. A draft entry follows this template, frozen and unaltered.
+> Your task is to attack it — never to author, edit, or rewrite it.
+>
+> **What to attack.** Attack every slot of the draft and report where it fails:
+> - **True?** Is the payload true against the corpus and the codebase, or does an
+>   existing entry, a recorded fact, or observable state contradict it?
+> - **Fires when intended?** Does the hook (`fires-when`, `consult-when`, or the
+>   summary) match the shapes it claims, and exclude the shapes it must not? Name
+>   a misfire a router would wrongly match.
+> - **Duplicate?** Does an admitted entry already carry this judgment? Name it.
+> - **Bounded?** Is the exclusion (`not-this`) present and real, or is the duty
+>   wider than its warrant supports?
+> - **Warranted?** Do the anchors carry the claim, or is an assertion unanchored?
+>
+> **What to return.** Return a verdict-pending record: your findings, each phrased
+> as an attack with its evidence, and the verdict field left empty. You never fill
+> the verdict — the adjudicating human fills it at merge. You hand the record back
+> to the dispatching root; you never write to a store.
+>
+> **Do:** attempt to refute every slot, and report a doubt rather than withhold it.
+> **Don't:** don't author or edit the draft — you hold no stake in its admission,
+> and a suggested rewrite is outside your role.
+>
+> **Do:** leave the verdict empty and hand the record back.
+> **Don't:** don't declare a verdict or a pass — the record stays pending until a
+> human merges it.
 
 **Do:** freeze the target — append the draft's exact text to the examiner
 dispatch.
