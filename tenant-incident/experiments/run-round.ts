@@ -44,6 +44,7 @@ import {
   frozenCorpusRefBlockers,
   buildSessionRequest,
   buildTurnRequest,
+  downloadSandboxFilePath,
   interpretTurnState,
   buildApprovalResume,
   parseSandboxArtifacts,
@@ -269,6 +270,10 @@ function scoreReportToResult(
   if (score === null) {
     return nonMeasured(run, 'error', `grade.sh printed no SCORE line (exit ${result.code}) — grader interrupted or malformed; run excluded from measurement`);
   }
+  // disposition/forecast_hit are the P4 close-output contract — the pre-registered machine
+  // interface the close skill writes into the report frontmatter (MULTI-RUN-STRATEGY §7 P4).
+  // When the skill has NOT written them (P4 unhonoured), both read null and the ledger folds
+  // them as empty — missing telemetry stays OUT of measurement rather than being invented.
   const meta = parseReportMeta(readFileSync(reportPath, 'utf8'));
   return {
     run,
@@ -370,6 +375,10 @@ function harnessPreflight(cli: Cli, corpusTag: string, corpusCommit: string | nu
   const blockers: string[] = [];
   if (!cli.prereqsConfirmed) blockers.push('P1/P2/P3/P4 are not asserted — re-run with --prereqs-confirmed once they hold (see the prerequisite list)');
   if (url === '') blockers.push('TRUEFORGE_URL is unset (e.g. http://127.0.0.1:8790)');
+  // TRUEFORGE_MODEL ASSERTS the saved agent's model; it does not CONTROL it (a saved agent is
+  // booted by name, model baked into its AgentSpec). This checks the operator's asserted value
+  // is the proven OpenAI path; the agent's EFFECTIVE model is verified live before the gate
+  // lifts (see the RUN_ROUND_HARNESS_WIRED blocker).
   if (model === '') blockers.push('TRUEFORGE_MODEL is unset');
   else if (!model.startsWith('openai/')) blockers.push(`TRUEFORGE_MODEL is ${model} — only openai/* is a proven path (ISS-003; Anthropic identity-linked keys fail)`);
   if (rawPolicy !== 'allow' && rawPolicy !== 'deny') blockers.push(`RUN_ROUND_APPROVAL_POLICY is ${JSON.stringify(rawPolicy)} — must be allow or deny`);
@@ -382,12 +391,18 @@ function harnessPreflight(cli: Cli, corpusTag: string, corpusCommit: string | nu
 
   // The live TrueForge fan-out is now BUILT (harnessRun below), but it has not been verified
   // end-to-end against a running server, and it still leans on contracts that are only
-  // confirmed on the runner side (P3 boot honouring the tag; P4 close-output frontmatter; the
-  // per-scenario incident brief file). Rather than pass preflight before a live shake-out, the
-  // gate stays until a maintainer has run it once and confirmed the path — set
-  // RUN_ROUND_HARNESS_WIRED=1 only then.
+  // confirmed on the runner side. Rather than pass preflight before a live shake-out, the gate
+  // stays until a maintainer has run it once and confirmed the path. Specifically deferred to
+  // that live check, and the reason the gate stands:
+  //   - the boot HONOURS ref:<tag> so measurements are corpus-pinned (P3) — the session
+  //     request cannot yet transmit/verify the ref, so a run could read an unpinned corpus;
+  //   - the saved agent's EFFECTIVE model is openai/* (TRUEFORGE_MODEL only asserts it, ISS-003);
+  //   - the close writes disposition/forecast_hit as the machine-readable P4 frontmatter;
+  //   - the per-scenario incident brief and the artifact/patch download path resolve.
+  // While the gate stands, NO real run executes, so none of the above can produce a false
+  // measurement — set RUN_ROUND_HARNESS_WIRED=1 only after each is confirmed live.
   if (process.env.RUN_ROUND_HARNESS_WIRED !== '1') {
-    blockers.push('the live TrueForge fan-out is built but not yet verified end-to-end — set RUN_ROUND_HARNESS_WIRED=1 only after a maintainer has run it against a confirmed server and checked the boot (P3), brief, and artifact path live');
+    blockers.push('the live TrueForge fan-out is built but not yet verified end-to-end — deferred live checks: boot honours ref:<tag> (P3, corpus-pinned), the saved agent\'s effective model is openai/* (ISS-003), the P4 close-output frontmatter, and the brief/artifact path. Set RUN_ROUND_HARNESS_WIRED=1 only after a maintainer confirms these against a running server');
   }
   if (blockers.length > 0) {
     info('harness mode is blocked — a real round cannot run until:');
@@ -543,14 +558,29 @@ async function harnessRun(run: PlannedRun, deps: HarnessRunDeps): Promise<RunRes
     if (sandboxReport === null) {
       return nonMeasured(run, 'error', `harness run emitted no diagnosis report artifact (${artifacts.length} artifact(s) found${patchPath ? `, incl. patch ${patchPath}` : ''}) — nothing to grade`);
     }
-    const reportText = await tfGetText(cfg.url, `/api/v1/sessions/${sid}/turns/${tid}/download-sandbox-file?path=${encodeURIComponent(sandboxReport)}`);
 
-    const localReport = join(reportOutDir, run.scenarioName, `${run.runIndex}.md`);
-    mkdirSync(dirname(localReport), { recursive: true });
+    // Persist both artifacts under a deterministic per-run directory so they survive the round.
+    const runOutDir = join(reportOutDir, run.scenarioName, String(run.runIndex));
+    mkdirSync(runOutDir, { recursive: true });
+
+    const reportText = await tfGetText(cfg.url, downloadSandboxFilePath(sid, tid, sandboxReport));
+    const localReport = join(runOutDir, 'diagnosis.md');
     writeFileSync(localReport, reportText);
 
-    const result = scoreReportToResult(run, localReport, false, maxSteps, `graded the harness diagnosis report (downloaded from the TrueForge sandbox${patchPath ? `; deposit candidate ${patchPath}` : ''})`);
-    return result;
+    // Retrieve and PERSIST the format-patch too — it is the deposit CANDIDATE the slow loop
+    // adjudicates; keeping only its sandbox path (which the report never renders) would strand
+    // it. Its target is the run's OWN branch run/{round}/{scenario}/{n} (§3), applied host-side
+    // by the deposit helper at the slow loop. The runner never pushes and never merges (Art. 2).
+    let depositNote = '';
+    if (patchPath !== null) {
+      const patchText = await tfGetText(cfg.url, downloadSandboxFilePath(sid, tid, patchPath));
+      const localPatch = join(runOutDir, 'deposit.patch');
+      writeFileSync(localPatch, patchText);
+      depositNote = `; deposit candidate persisted to ${relToRepo(localPatch)} (target branch ${run.branch}; applied host-side at the slow loop, never by the runner)`;
+      info(`[${run.label}] deposit candidate → ${relToRepo(localPatch)} (branch ${run.branch})`);
+    }
+
+    return scoreReportToResult(run, localReport, false, maxSteps, `graded the harness diagnosis report (downloaded from the TrueForge sandbox)${depositNote}`);
   } catch (e) {
     return nonMeasured(run, 'error', `harness run threw: ${(e as Error).message}`);
   }

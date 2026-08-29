@@ -20,6 +20,7 @@ import {
   frozenCorpusRefBlockers,
   buildSessionRequest,
   buildTurnRequest,
+  downloadSandboxFilePath,
   interpretTurnState,
   buildApprovalResume,
   parseSandboxArtifacts,
@@ -348,6 +349,13 @@ test('buildTurnRequest wraps the brief as a non-streaming user.message', () => {
     stream: false,
     input: [{ type: 'user.message', content: 'orders is 504ing' }],
   });
+});
+
+test('downloadSandboxFilePath query-encodes the absolute artifact path', () => {
+  assert.equal(
+    downloadSandboxFilePath('s1', 't2', '/opt/tf/out/0001-deposit.patch'),
+    '/api/v1/sessions/s1/turns/t2/download-sandbox-file?path=%2Fopt%2Ftf%2Fout%2F0001-deposit.patch',
+  );
 });
 
 test('interpretTurnState reads a done turn with output content', () => {

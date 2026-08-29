@@ -359,6 +359,12 @@ export function buildTurnRequest(brief: string): { stream: false; input: { type:
   return { stream: false, input: [{ type: 'user.message', content: brief }] };
 }
 
+/** The GET path that downloads one allowlisted sandbox file — the emitted diagnosis report or
+ * the format-patch (trueforge-harness-verified). The absolute path is query-encoded. */
+export function downloadSandboxFilePath(sessionId: string, turnId: string, absPath: string): string {
+  return `/api/v1/sessions/${sessionId}/turns/${turnId}/download-sandbox-file?path=${encodeURIComponent(absPath)}`;
+}
+
 // A pause the harness knows how to resume. The verified required-action type is
 // `tool.approval_required`, resumed with `user.tool_approval`. The task's "tool.response_required"
 // names the same class of turn pause (the turn requires an action before it can continue); the
