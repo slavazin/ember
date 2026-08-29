@@ -10,10 +10,11 @@ The agent drafts and examines; the human routes, adjudicates, and merges. No
 promotion happens without a human merge.
 
 The agent-drafting half is the `consolidate` skill: it reads across the fast-loop
-pull requests, walks the consolidation lenses, routes each recurrence to its
-cheapest home, and drafts promotions against the bars below. This skill holds
-those bars and the route-before-mint ladder; `consolidate` cites them and does not
-restate them.
+pull requests, walks the consolidation lenses, proposes each recurrence's cheapest
+home, and drafts promotions against the bars below. The route it proposes is a
+proposal; the human performs or redirects it here, at adjudication. This skill
+holds the bars and the route-before-mint ladder the human runs; `consolidate`
+cites them and does not restate them.
 
 ## Route before mint
 

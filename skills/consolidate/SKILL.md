@@ -1,23 +1,26 @@
 ---
 name: consolidate
-description: The slow-loop consolidation pass — read the accumulated fast-loop pull requests, walk the consolidation lenses over their signal, route each ratified recurrence to its cheapest existing home, and draft promotions through corpus-write for the human to adjudicate.
+description: The slow-loop consolidation pass — read the accumulated fast-loop pull requests, walk the consolidation lenses over their signal, propose each ratified recurrence's cheapest existing home, and draft promotions through corpus-write for the human to route and adjudicate.
 ---
 
 # consolidate — the slow loop, agent-drafting half
 
 The slow loop's agent-drafting pass: it reads across the accumulated fast-loop
 pull requests, walks a fixed set of consolidation lenses over the signal they
-carry, routes each ratified recurrence to the cheapest authority that already
+carry, proposes for each ratified recurrence the cheapest authority that already
 covers it, and drafts the residue as promotion candidates through the
-`corpus-write` skill. It **proposes**; the human adjudicates and merges. The
-graded bars and the route-before-mint ladder the human runs are the
+`corpus-write` skill. It **proposes**; the human routes, adjudicates, and merges.
+The graded bars and the route-before-mint ladder the human runs are the
 `promotion-review` skill, cited here and never restated.
 
 The slow loop is where knowledge moves between tiers, and it runs where the human
 is present. This pass is the agent half of that work — the drafting a fresh
 reader does across sessions — split from the human's adjudication half exactly as
 the fast loop's `close` is split from its `session` boot. A single record never
-drives a tier change: recurrence does, read across pull requests.
+drives a decision or a rule: recurrence does, read across pull requests. A belief
+is the exception — recurrence is not its bar; a single novel world-facing claim is
+admissible on its falsifier, deadline, and reference price (the `promotion-review`
+skill).
 
 Load this at a consolidation pass, from fresh context. It re-derives its inputs
 from git history and the pull requests, so an agent holding none of the fast
@@ -27,10 +30,16 @@ loop's context runs it in full.
 
 The input is the signal the fast loop deposited: the per-entry dispositions
 (applied / considered-not-applicable / fired-off-map), the lens answers that
-survived their counterfactuals, and the candidate drafts — each carried in a
-fast-loop pull request (see the `close` skill), grouped by the `Incident-Class`
-commit trailer and ordered by author-date (see `corpus-write`). A merged pull
-request's candidate is already an admitted entry in the shape-matched stores; its
+survived their counterfactuals, and the candidate drafts. Every close-out is a
+fast-loop pull request — filed even by a quiet session that drafts no candidate,
+its dispositions and lens answers content enough (see the `close` skill) — so the
+disposition telemetry, the bulk of it from quiet sessions, is read across all of
+them and never gated on a deposit. The `Incident-Class` commit trailer groups the
+deposits by class where a candidate was filed and its author-date orders them (see
+`corpus-write`); a close-out that deposits nothing carries no trailer and is keyed
+instead by the work-shape it declares at boot (see the `session` skill), so no
+close-out's telemetry is dropped for lacking a deposit. A merged pull request's
+candidate is already an admitted entry in the shape-matched stores; its
 dispositions and un-promoted lens answers live only in the pull request, and that
 residue is this pass's raw material.
 
@@ -45,9 +54,10 @@ record.
 **Do:** gather the dispositions and surviving lens answers across the pull
 requests of a class before opening any lens — recurrence is read across records,
 not within one.
-**Don't:** don't consolidate from a single pull request; one occurrence is at most
-a candidate draft, and a tier change minted from it is a guess wearing the store's
-authority.
+**Don't:** don't promote a decision or a rule from a single pull request; one
+occurrence is at most a candidate draft, and a decision or rule minted from it is a
+guess wearing the store's authority — a belief, whose bar is a falsifier and price
+rather than recurrence, is the standing exception.
 
 **Do:** treat an un-merged candidate as evidence only, cited in a draft's warrant.
 **Don't:** don't bind or apply an un-admitted candidate as though it were a store
@@ -100,10 +110,13 @@ recurrence count nominate — the magnitude and the verdict are the human's.
 **Don't:** don't rewrite an entry holistically because it "seems wrong"; an
 un-slotted correction inherits the attribution weakness the pentad exists to cure.
 
-## 3. Route before minting
+## 3. Propose the route before minting
 
-Before minting an entry, route each surviving candidate to the cheapest
-authority that already covers it, walked in order — minting is the last
+Before drafting an entry, propose for each surviving candidate the cheapest
+authority that already covers it, walked in order. The route is a **proposal**,
+not the authoritative placement: this pass researches and names the cheapest home
+and drafts to it; the human performs or redirects the route at adjudication (the
+`promotion-review` skill holds the ladder the human runs). Minting is the last
 resort, because every standing mechanism taxes every future session it routes to,
 and the ladder prices that at admission. Refusal is a first-class outcome: a
 recurrence that no tier's blast radius justifies is recorded as considered and
@@ -119,9 +132,10 @@ minted nowhere.
 | a judgment no existing entry carries | a minted entry in the store its slot signature names (step 4) |
 
 **Do:** search the target store and the latch tables for an entry the candidate
-extends before drafting one, and route to it when one exists.
-**Don't:** don't mint a duplicate — two entries for one judgment fork the moment
-one is corrected, and the router never learns which to fire.
+extends before drafting one, and propose routing to it when one exists.
+**Don't:** don't draft a duplicate — two entries for one judgment fork the moment
+one is corrected, and the router never learns which to fire; and don't perform the
+authoritative route yourself — the placement is the human's at merge.
 
 **Do:** record refusal as an outcome when no tier earns the recurrence.
 **Don't:** don't promote to clear a backlog; a mechanism minted to look thorough
