@@ -3,11 +3,17 @@ name: promotion-review
 description: The slow-loop route-before-mint ladder and graded bars the human runs to promote accumulated observations into decisions, rules, and beliefs.
 ---
 
-# promotion-review — the slow loop
+# promotion-review — the slow loop, human-adjudication half
 
 The human-run pass that promotes accumulated observations into permanent entries.
 The agent drafts and examines; the human routes, adjudicates, and merges. No
 promotion happens without a human merge.
+
+The agent-drafting half is the `consolidate` skill: it reads across the fast-loop
+pull requests, walks the consolidation lenses, routes each recurrence to its
+cheapest home, and drafts promotions against the bars below. This skill holds
+those bars and the route-before-mint ladder; `consolidate` cites them and does not
+restate them.
 
 ## Route before mint
 

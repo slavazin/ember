@@ -55,4 +55,5 @@ and deadline at admission; every store declares itself register or ledger.
 ## Article 9 — Seed minimal; mint from your own misses.
 The corpus starts at the smallest set that runs one loop; permanent knowledge is
 minted from observed recurrence, never imported wholesale; a marked import never
-skips the promotion ladder. Procedure: the `promotion-review` skill.
+skips the promotion ladder. Procedure: the `consolidate` skill (agent drafting) and
+the `promotion-review` skill (human adjudication).
