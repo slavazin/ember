@@ -16,11 +16,15 @@ The graded bars and the route-before-mint ladder the human runs are the
 The slow loop is where knowledge moves between tiers, and it runs where the human
 is present. This pass is the agent half of that work — the drafting a fresh
 reader does across sessions — split from the human's adjudication half exactly as
-the fast loop's `close` is split from its `session` boot. A single record never
-drives a decision or a rule: recurrence does, read across pull requests. A belief
-is the exception — recurrence is not its bar; a single novel world-facing claim is
-admissible on its falsifier, deadline, and reference price (the `promotion-review`
-skill).
+the fast loop's `close` is split from its `session` boot. This pass feeds the
+corpus stores the fast loop deposits into — the case store `corpus/decisions/`, the
+rule store, the belief store — and each store's own admission bar governs, not a
+bar carried across stores. A single record never drives a case-store decision or a
+rule: recurrence is their bar, read across pull requests. A belief is the exception
+— recurrence is not its bar; a single novel world-facing claim is admissible on its
+falsifier, deadline, and reference price (the `promotion-review` skill). A decision
+store on a different lifecycle — the build ADR store, admitting one adjudicated fork
+— is not this pass's subject and does not borrow the case store's recurrence bar.
 
 Load this at a consolidation pass, from fresh context. It re-derives its inputs
 from git history and the pull requests, so an agent holding none of the fast
@@ -54,10 +58,10 @@ record.
 **Do:** gather the dispositions and surviving lens answers across the pull
 requests of a class before opening any lens — recurrence is read across records,
 not within one.
-**Don't:** don't promote a decision or a rule from a single pull request; one
-occurrence is at most a candidate draft, and a decision or rule minted from it is a
-guess wearing the store's authority — a belief, whose bar is a falsifier and price
-rather than recurrence, is the standing exception.
+**Don't:** don't promote a case-store decision or a rule from a single pull
+request; one occurrence is at most a candidate draft, and a case or rule minted
+from it is a guess wearing the store's authority — a belief, whose bar is a
+falsifier and price rather than recurrence, is the standing exception.
 
 **Do:** treat an un-merged candidate as evidence only, cited in a draft's warrant.
 **Don't:** don't bind or apply an un-admitted candidate as though it were a store
@@ -154,7 +158,7 @@ draft, and file both on a branch through the approval gate. The pull request's
 merge is the admitting write; this pass never mints an id.
 
 Hold each promotion to the bar its tier declares in the `promotion-review` skill —
-a rule to two decisions on distinct surfaces, a decision to two anchored
+a rule to two case-store decisions on distinct surfaces, a case to two anchored
 recurrences, a belief to a declared falsifier, a deadline, and a reference price.
 The bars are that skill's, cited here, not copied.
 
