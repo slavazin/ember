@@ -1072,6 +1072,30 @@ function uniqueId(ctx: Ctx): RuleResult {
   return ok(findings);
 }
 
+// R14 — derived-quantity (BS-0040, hardcoded-assumption; LANGUAGE.md reference discipline).
+// A recency or size literal in governed prose is the greppable form of a magic constant pinned
+// where the case names the quantity ("the last day" beside a symptom-window requirement). Warn,
+// not error: some constants are genuinely fixed facts (a spec width, a quota), so this is the
+// author's cue to derive or to state the figure as a fact — the TELL_WARNINGS posture. The
+// open-sample form of the same failure (an exhaustive removal set stated as a few examples) is
+// not lexically separable from a legitimate list and stays review judgment (residue).
+const RECENCY_LITERAL = /\bthe (?:last|past|previous)\s+\d*\s*(?:day|days|hour|hours|week|weeks|month|months|minute|minutes)\b/gi;
+const CUTOFF_LITERAL = /\b\d+\s*-?\s*(?:h|hr|hrs|hour|hours)\b|\b\d+\s*-?\s*(?:day|days|week|weeks|month|months)\s*(?:window|cutoff|lookback|recency|ago)\b/gi;
+
+function derivedQuantity(ctx: Ctx): RuleResult {
+  const findings: Finding[] = [];
+  for (const relPath of languageGovernedFiles(ctx.root)) {
+    // LANGUAGE.md defines this pattern in its own examples ("the last day", "24h"); scanning it
+    // flags the rule's own specification (self-match, BS-0004/0022). Its examples are quoted.
+    if (relPath === 'corpus/LANGUAGE.md') continue;
+    const text = stripCodeSpans(read(ctx.root, relPath));
+    const message =
+      'recency/size literal — derive the bound from the case the procedure names, or state it as a fixed fact when the case does not touch it (LANGUAGE.md reference discipline)';
+    for (const re of [RECENCY_LITERAL, CUTOFF_LITERAL]) collect(findings, 'derived-quantity', relPath, text, re, message, 'warn');
+  }
+  return ok(findings);
+}
+
 // ── shared collectors ──
 
 function collect(findings: Finding[], rule: string, file: string, text: string, re: RegExp, message: string, severity: Severity): void {
@@ -1101,6 +1125,7 @@ export const RULES: Rule[] = [
   { name: 'refs-resolve', run: refsResolve, residue: ['over layer prose (corpus/skills/roles), both tenant trees, and tools/*.md protocols, checks repo-root-absolute markdown links and bare code-span layer paths resolve (and reject `..`); does not check the target content is right, nor catch a path named in prose without link or code-span syntax. Fenced code and `…-nnnn.md` placeholders are exempt.'] },
   { name: 'check-seam', run: checkSeam, residue: ['greps a DERIVED tenant-term set; cannot catch tenant knowledge expressed without a registered term (paraphrase), and coverage grows only as the vocabulary does. A no-op until the tenant grows terms/scenarios. Excludes *.test.ts (fixtures) and the tenant-build tree (its subject is the layer — tenant→layer references are allowed).'] },
   { name: 'unique-id', run: uniqueId, residue: ['checks that each admitted id resolves to one entry path across all corpus roots; does not check the id was minted correctly or that its content is right. Keyed on the admitted-filename shape, so a draft (no minted id) is out of scope.'] },
+  { name: 'derived-quantity', run: derivedQuantity, residue: ["warns on a recency/size literal's SHAPE in governed prose, not on whether the constant should derive from the case — a genuinely fixed figure (a spec width, a quota) is a legitimate fact. Does not reach the open-sample form of the same failure (an exhaustive removal set stated as examples), which is not lexically separable from a legitimate list. LANGUAGE.md's own examples are exempt (self-definition)."] },
 ];
 
 const GLOBAL_RESIDUE = [

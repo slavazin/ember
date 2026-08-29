@@ -555,6 +555,32 @@ test('unique-id: distinct ids across roots pass', () => {
   );
 });
 
+// ── R14 derived-quantity (BS-0040 / LANGUAGE.md reference discipline) ──
+
+test('derived-quantity: a recency/size literal warns; a case-derived bound and LANGUAGE.md are clean', () => {
+  // a magic recency constant in a skill directive — the author's cue to derive
+  withCorpus({ 'skills/x/SKILL.md': '# x\n\nSearch the last day for a matching incident.\n' }, (root) => {
+    const f = run(root, 'derived-quantity');
+    assert.equal(errors(f).length, 0, 'the rule is advisory (warn), never an error');
+    assert.ok(
+      warnings(f).some((w) => w.file === 'skills/x/SKILL.md' && /recency\/size literal/.test(w.message)),
+      'the recency literal warns',
+    );
+  });
+  // a cutoff figure ("24h") is the same failure and warns too
+  withCorpus({ 'skills/x/SKILL.md': '# x\n\nBound the query to a 24h cutoff.\n' }, (root) => {
+    assert.ok(warnings(run(root, 'derived-quantity')).some((w) => /recency\/size literal/.test(w.message)), 'a 24h cutoff warns');
+  });
+  // the bound named by the case it derives from — the fixed form is gone, nothing to flag
+  withCorpus({ 'skills/x/SKILL.md': '# x\n\nSearch around the onset, across the symptom window.\n' }, (root) => {
+    assert.deepEqual(run(root, 'derived-quantity'), [], 'a case-derived bound does not warn');
+  });
+  // LANGUAGE.md defines the pattern in its own examples — exempt (self-match, BS-0004/0022)
+  withCorpus({ 'corpus/LANGUAGE.md': '# lang\n\nnot "the last day" — derive it from the case.\n' }, (root) => {
+    assert.deepEqual(run(root, 'derived-quantity'), [], 'LANGUAGE.md self-definition is exempt');
+  });
+});
+
 // Qodo #11 (deleted stores evade freeze): the frozen pathspec is derived from base∪working-tree,
 // so deleting a store directory cannot remove it from the base comparison. Previously the pathspec
 // came from working-tree discovery alone, so a deletion shrank the gate's own scope.
