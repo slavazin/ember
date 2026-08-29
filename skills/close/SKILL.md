@@ -47,7 +47,11 @@ the telemetry the slow loop promotes from.
 set aside leaves no trace there, so a set reconstructed from the diff silently
 drops exactly the considered-not-applicable signal.
 
-## 2. Walk the retro lenses
+**Residue:** the dispositions are only as complete as the record the working
+session kept. That the record is whole rests on the working session's discipline;
+nothing here mechanically verifies a consultation was written down — a consultation
+never recorded is dispositioned by neither the record nor the diff, and is lost
+silently. This is a disclosed floor, not a guarantee (Article 8).
 
 A **lens** is a guiding question paired with its counterfactual — an angle on the
 work just done, and the challenge that keeps the angle's answer honest (see the
