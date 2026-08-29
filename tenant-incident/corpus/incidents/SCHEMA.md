@@ -94,14 +94,18 @@ moot). Store-uniform, inherited by every entry:
 - **Wiring edges, inbound:** every entry naming this case in `related` — a later
   case of the same class, or a rule, belief, or decision whose warrant cites this
   case as one of its recurrences. The reverse view is derived, never hand-listed.
-- **Floor gate:** the store validates entry shape at deposit time — id canonical
-  and equal to the filename, status and the `forecast-outcome` and `disposition`
-  vocabularies honoured, the supersession pointer reciprocal, and the required
-  sections present. Genesis-minimal ships this contract ahead of the mechanical
-  gate; the gate is wired when the incident loop mints the first case, so the
-  store stays empty-but-valid until then. Residue: it never checks that the root
-  cause is true, that an anchor supports its claim, or that the learning
-  generalizes — that stays human review.
+- **Floor gate:** two mechanical checks, split the way the build ADR store's are.
+  Byte-immutability holds from admission: the corpus-lint frozen-path check
+  freezes every admitted `INC-nnnn.md` against the merge-base — the body and
+  every frontmatter line except `status` and `superseded-by` — so a closed case
+  is superseded, never edited or deleted in place. Shape validation — id
+  canonical and equal to the filename, the `status`, `forecast-outcome`, and
+  `disposition` vocabularies honoured, the supersession pointer reciprocal, and
+  the required sections present — is owned by the store's own validator, wired
+  when the incident loop mints the first case; this SCHEMA is the contract that
+  validator enforces, and the store stays empty-but-valid until then. Residue:
+  no check reads whether the root cause is true, an anchor supports its claim, or
+  the learning generalizes — that stays human review.
 
 ## Do / Don't
 

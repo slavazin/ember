@@ -32,6 +32,7 @@ what was diagnosed, when, and at what forecast.
 belief stores co-referenced under [/corpus](/corpus/README.md); this store is
 a self-describing tenant store — it ships its own contract in
 [SCHEMA.md](SCHEMA.md) because no layer store carries incident-case semantics,
-and it is validated by that contract at deposit time rather than by the layer
-entry checks. The distinction from a decision record is argued in the SCHEMA
-header.
+so its entries are governed by that contract, not by the layer entry checks.
+The SCHEMA's floor-gate note records which of its checks are mechanical and
+which are the loop-phase follow-up; the distinction from a decision record is
+argued in the SCHEMA header.

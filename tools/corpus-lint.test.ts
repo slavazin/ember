@@ -484,6 +484,88 @@ test('frozen-path: an ADR convergence (multiline converged-into list) is sanctio
   );
 });
 
+// ── incident case ledger wiring (a self-describing tenant ledger named outside FROZEN_STORES) ──
+
+// A closed incident case (the incident tenant's self-describing ledger — its own INC contract, not
+// the layer's D- contract). Paired with standing files so discovery treats the store as
+// self-describing and the layer entry checks leave it alone.
+const INCIDENT = `---
+id: INC-0001
+status: closed
+class: connection-storm
+surface: orders-svc
+forecast-outcome: hit
+disposition: applied
+related: []
+occurred: 2026-08-27
+closed: 2026-08-29
+---
+
+# a retry storm exhausted the pool and the class learned to probe saturation first
+
+## Incident
+Timeouts under load (observed 2026-08-27, incident A).
+
+## Forecast
+The pool-saturation probe predicted the storm below the ceiling and it held (observed 2026-08-27).
+
+## Root cause
+Unbounded retries multiplied concurrent checkouts past the pool ceiling.
+
+## Learning
+A later case of this class probes saturation before committing a fix.
+
+## Evidence
+- PR #1 — the fix.
+`;
+
+const INCIDENT_STORE_STANDING = {
+  'tenant-incident/corpus/incidents/README.md': '# incident case ledger\n\n**Kind:** ledger\n',
+  'tenant-incident/corpus/incidents/SCHEMA.md': '# SCHEMA — incident case entry\n',
+};
+const INCIDENT_BASE = { ...INCIDENT_STORE_STANDING, 'tenant-incident/corpus/incidents/INC-0001.md': INCIDENT };
+
+test('frozen-path: the incident case ledger is frozen on ITS OWN contract — a body edit fails', () => {
+  withGitRepo(
+    INCIDENT_BASE,
+    (root) => writeFileSync(join(root, 'tenant-incident/corpus/incidents/INC-0001.md'), INCIDENT.replace('Unbounded retries', 'Something else')),
+    (root) => {
+      const errs = errors(run(root, 'frozen-path'));
+      assert.ok(errs.some((f) => f.file === 'tenant-incident/corpus/incidents/INC-0001.md' && /frozen body/.test(f.message)), JSON.stringify(errs));
+    },
+  );
+});
+
+test('frozen-path: an incident status flip to superseded is sanctioned; a frozen field edit fails', () => {
+  withGitRepo(
+    INCIDENT_BASE,
+    (root) => writeFileSync(join(root, 'tenant-incident/corpus/incidents/INC-0001.md'), INCIDENT.replace('status: closed', 'status: superseded\nsuperseded-by: INC-0009')),
+    (root) => assert.equal(errors(run(root, 'frozen-path')).length, 0),
+  );
+  withGitRepo(
+    INCIDENT_BASE,
+    (root) => writeFileSync(join(root, 'tenant-incident/corpus/incidents/INC-0001.md'), INCIDENT.replace('closed: 2026-08-29', 'closed: 2026-08-30')),
+    (root) => assert.match(errors(run(root, 'frozen-path'))[0]!.message, /frozen frontmatter/),
+  );
+});
+
+test('frozen-path: deleting a frozen incident case fails — supersede in place, never remove', () => {
+  withGitRepo(
+    INCIDENT_BASE,
+    (root) => rmSync(join(root, 'tenant-incident/corpus/incidents/INC-0001.md')),
+    (root) => assert.match(errors(run(root, 'frozen-path'))[0]!.message, /deleted or renamed/),
+  );
+});
+
+test('decision 4: the incident case ledger (own SCHEMA) is NOT held to the layer entry contract', () => {
+  // INC-0001.md carries no D-/R-/B- id and none of the layer sections; because the store is named
+  // outside the layer stores AND ships its own SCHEMA, the layer entry checks never reach it.
+  withCorpus({ ...INCIDENT_BASE }, (root) => {
+    const relevant = errors(run(root, 'five-slot')).filter((f) => f.file.startsWith('tenant-incident/corpus/incidents/'));
+    assert.deepEqual(relevant, [], JSON.stringify(relevant));
+  });
+});
+
 test('decision 4: a self-describing tenant store (own SCHEMA) is NOT held to the layer entry contract', () => {
   // ADR-0001.md would fail the layer decisions five-slot (no D- id, no ## Revisit, no recurrences).
   // Because tenant-build ships its own SCHEMA, discovery excludes it from the layer entry checks —
