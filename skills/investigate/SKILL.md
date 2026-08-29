@@ -97,12 +97,19 @@ file resolving outside this skill.
 > specific mechanism, component, or service.
 >
 > **World search.** With your lens's signals in hand, ground them against the world
-> through the external-grounding MCP path — the anchored signal is the query seed,
-> so the search direction is set by the lens, not reasoned from scratch. Search
-> comes after the lens; the lens is what tells it where to look. If that path is not
-> available in this run, report world search as unavailable with the reason, hand
-> back the lens's internal signals, and let the root decide whether the gap blocks
-> the diagnosis — the lens observation stands on its own.
+> by calling the `search_engine` tool — and `scrape_as_markdown` to read a source it
+> returns. This dispatch is your only context: you do not see the investigate skill,
+> the root's instructions, or the conversation, so the instruction to search lives
+> here and grounding runs only if you act on it — a lens handed back without a
+> `search_engine` call is ungrounded. The anchored signal is the query seed, so the
+> search direction is set by the lens, not reasoned from scratch; search comes after
+> the lens, which is what tells it where to look. If the `search_engine` tool is not
+> available to you in this run, say so explicitly in your result with the reason,
+> hand back the lens's internal signals, and let the root decide whether the gap
+> blocks the diagnosis — the lens observation stands on its own. Reporting the tool
+> as unavailable rather than skipping it silently turns a tooling gap into an
+> observable signal, so a later run can tell a plumbing regression from the model
+> choosing not to search.
 >
 > Start at the most-implicated dependency's or provider's official status page and
 > check for an active incident overlapping the symptom window: a declared upstream
