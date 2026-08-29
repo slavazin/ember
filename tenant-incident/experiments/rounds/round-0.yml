@@ -1,0 +1,62 @@
+# round-0 — the cold baseline (MULTI-RUN-STRATEGY.md §5, "R0 — corpus/v0").
+#
+# This spec IS the round's pre-registration: written before the round, checked against
+# the ledger after. The corpus is genesis-empty, so every run is expected to fire off the
+# map — no promoted entry exists to apply. What R0 buys is the cold step-count baseline the
+# warm rounds bend against, and the first union of candidates the slow loop adjudicates
+# (pool-a + pool-b are two distinct surfaces of one saturation shape → a rule the slow loop
+# can mint).
+#
+# Role note: R0 is the cold baseline, so its scenarios read as `novelty` (nothing helps) or
+# `anchor` (they drive the first promotion). The §5 one-frontier-per-round rubric governs the
+# warm rounds; a cold baseline legitimately runs several off-map scenarios at once.
+#
+# Buildable today: pool-exhaustion a/b, bad-deploy a/b, and poison-message a/b exist. The one
+# grounding class (upstream) is unbuilt, so upstream-a reports blocked until it lands (§7
+# artifact 1). The pre-registration stands regardless — it declares intent, and the runner
+# grades what exists.
+
+round: 0
+corpus_tag: corpus/v0
+description: >
+  Cold baseline against a genesis-empty corpus. The replicated pool anchor (surface a, x3)
+  ships the headline step count with an interval; pool-b is the second distinct surface that
+  lets the slow loop clear the rule bar (two surfaces, not one renamed). The other three are
+  single-instance coverage across dominant shapes — held as candidate drafts, not promoted.
+
+scenarios:
+  # Replicated anchor: the saturation shape, three runs for an error-barred cold step count.
+  - class: pool-exhaustion
+    surface: a
+    role: anchor
+    runs: 3
+    expect: fired-off-map
+
+  # Second distinct surface of the same shape (Node/PG → Py/Redis): recurrence supply for the
+  # rule bar. One run — recurrence is a surface axis, not a replicate axis (§2).
+  - class: pool-exhaustion
+    surface: b
+    role: anchor
+    runs: 1
+    expect: fired-off-map
+
+  # Coverage — the `change` dominant shape. Single instance, held as a candidate draft.
+  - class: bad-deploy
+    surface: a
+    role: novelty
+    runs: 1
+    expect: fired-off-map
+
+  # Coverage — the `dependency` shape, grounding-dependent (status page). Exercises Article 6.
+  - class: upstream
+    surface: a
+    role: novelty
+    runs: 1
+    expect: fired-off-map
+
+  # Coverage — the `state` shape (stuck queue). Single instance, held as a candidate draft.
+  - class: poison-message
+    surface: a
+    role: novelty
+    runs: 1
+    expect: fired-off-map
