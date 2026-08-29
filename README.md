@@ -1,6 +1,6 @@
-# Quartermaster — a governed learning layer for TrueForge
+# Ember — a governed learning layer for TrueForge
 
-**Quartermaster** is a reusable learning substrate for the
+**Ember** is a reusable learning substrate for the
 [TrueForge](https://github.com/truefoundry/trueforge) agent harness: a
 git-backed corpus scaffold, a skill pack, and subagent role templates that give
 any TrueForge agent a governed, human-gated memory. The **incident responder**
