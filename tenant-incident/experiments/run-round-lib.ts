@@ -402,7 +402,10 @@ export function foldRoundToLedgerRows(spec: RoundSpec, results: readonly RunResu
       class: s.class,
       surface: s.surface,
       role: s.role,
-      runs: s.runs,
+      // The number of runs the row's statistics are actually folded from — NOT the spec's
+      // planned count. A scenario whose replicates were partly fixtures/errors folds fewer,
+      // and the row must say so rather than overstate the evidence behind the baseline.
+      runs: group.length,
       steps_median: steps.length > 0 ? fmtNum(quantile(steps, 0.5)) : 'n/a',
       steps_iqr: steps.length > 0 ? `${fmtNum(quantile(steps, 0.25))}..${fmtNum(quantile(steps, 0.75))}` : 'n/a',
       grade_pass: `${gradePassed}/${gradeCounted.length}`,

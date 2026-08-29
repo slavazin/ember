@@ -262,14 +262,23 @@ function localRun(run: PlannedRun, reportsDir: string | null, maxSteps: number |
     const gradeArgs = maxSteps === null ? [report.path] : [report.path, '--max-steps', String(maxSteps)];
     const result = runScript(run.scenarioName, 'grade.sh', gradeArgs);
     const score = parseScore(result.stdout);
+    // A normal gate failure still prints a SCORE line before exiting non-zero (scenarios
+    // README), so an ABSENT SCORE line means the grader was interrupted or malformed — an
+    // operational error, not a measurement. Reject it rather than fold a run with no gates
+    // and a fabricated-looking step count into the ledger.
+    if (score === null) {
+      info(`[${run.label}] reset (after malformed grade)`);
+      runScript(run.scenarioName, 'reset.sh');
+      return nonMeasured(run, 'error', `grade.sh printed no SCORE line (exit ${result.code}) — grader interrupted or malformed; run excluded from measurement`);
+    }
     const meta = parseReportMeta(readFileSync(report.path, 'utf8'));
     const source = report.isFixture ? 'graded the scenario fixture (stand-in — not a real run)' : 'graded a run report';
     graded = {
       run,
       status: 'graded',
-      steps: score?.steps ?? meta.steps ?? null,
+      steps: score.steps ?? meta.steps ?? null,
       gradePass: result.code === 0,
-      gates: score?.gates ?? {},
+      gates: score.gates,
       disposition: meta.disposition ?? null,
       forecastHit: meta.forecast_hit ?? null,
       reportPath: report.path,

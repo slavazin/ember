@@ -15,7 +15,8 @@ is defined once in [run-round-lib.ts](/tenant-incident/experiments/run-round-lib
 
 - **round · corpus_tag** — the round index and the frozen ref every run in it booted.
 - **class · surface · role** — the scenario and its learnability role in the round matrix.
-- **runs** — replicate count for this (class × surface).
+- **runs** — the measured replicate count folded into this row (real graded runs only), not
+  the spec's planned count; a partly fixture/errored scenario folds fewer and says so.
 - **steps_median · steps_IQR** — the demo metric, folded across replicates (IQR as
   `q1..q3`). A warm round of a promoted class reads a fraction of its cold baseline.
 - **grade_pass** — `k/n`: how many replicates passed the scenario's required `grade.sh`

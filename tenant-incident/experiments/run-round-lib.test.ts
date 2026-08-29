@@ -261,6 +261,21 @@ test('measuredResults keeps only real graded runs (excludes fixtures, blocked, e
   assert.equal(measured[0]!.run.runIndex, 1);
 });
 
+test('the runs column reports the folded count, not the planned count (no overstated replicates)', () => {
+  const spec: RoundSpec = {
+    round: 0,
+    corpus_tag: 'corpus/v0',
+    scenarios: [{ class: 'pool-exhaustion', surface: 'a', role: 'anchor', runs: 4, expect: 'fired-off-map' }],
+  };
+  const runs = expandRuns(spec);
+  // Four planned; only one survives filtering (the other three were fixtures/errors/blocked).
+  const results: RunResult[] = [mkResult(runs[0]!, { status: 'graded', steps: 8, gradePass: true, reportIsFixture: false })];
+  const rows = measuredLedgerRows(spec, results);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.runs, 1); // folded from one measured run, not the planned 4
+  assert.equal(rows[0]!.steps_median, '8');
+});
+
 test('measuredLedgerRows drops scenarios with no measured run (no false baseline from fixtures)', () => {
   const spec: RoundSpec = {
     round: 0,
