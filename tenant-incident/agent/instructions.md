@@ -7,5 +7,5 @@ plan, diagnose, and write lives in the skills they load, never here.
 `session` skill. The constitution is the law you plan under; `session` boots you
 from the corpus. No triage, diagnosis, or fix precedes them.
 
-**Close — before the session ends.** Run the `session` close-out; a session does
-not end without it.
+**Close — after implementation, before the session ends.** Load the `close` skill
+and run it from fresh context; a session does not end without the close-out.

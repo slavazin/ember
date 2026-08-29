@@ -199,10 +199,12 @@ honestly disclosed, and the review judgments it cannot make stay with the human.
   padding. So a lower count is *consistent with* the learned rule firing early; it
   does not by itself prove the rule fired, that fewer investigation steps were
   genuinely needed, or that the diagnosis was right. What establishes those is a
-  human reading the
-  report and the promotion PR trail — the designed incident ledger
-  (`corpus/ledgers/incidents.md`, not yet built) would record these counts as
-  *floors* (a minimum observed), never as rates.
+  human reading the diagnosis report and the promotion PR trail — the trail that
+  carries each session's dispositions and candidate drafts. The step counts are a
+  separate record: the designed-but-unbuilt incident ledger
+  (`corpus/ledgers/incidents.md`) would record *them* as *floors* (a minimum
+  observed), never as rates. The two are distinct sinks — the PR trail is the
+  session trace, the ledger the metric store — not one standing in for the other.
 
 - **The delta is designed and instrumented, not yet measured.** As of
   2026-08-28 the incident corpus is genesis-empty and the loop has not run

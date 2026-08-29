@@ -79,7 +79,7 @@ DB_GATE=$([ -n "$DB_MATCH" ] && echo PASS || echo FAIL)
 # ── Gate: latch-walk attestation ───────────────────────────────────────────
 # Presumes an ember-style responder that records a latch-walk line. See the
 # README limits: a correct pool diagnosis from another producer fails only this
-# gate. The canonical attestation format belongs to the `session` skill.
+# gate. The canonical attestation format lives in corpus/latches/README.md.
 LATCH_MATCH=$(awk '
   { l = tolower($0) }
   l ~ /^latch-walk:/ || l ~ /^#+[[:space:]]+latch[ -]?walk/ { print; exit }

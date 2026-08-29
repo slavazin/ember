@@ -17,6 +17,16 @@ product it governs (a diagnosis report, a pull-request description) — the
 attestation proves the walk happened, not that the consultation was honest;
 that residue is permanent.
 
+**Attestation:** each walk leaves one line in the work product it governs —
+the diagnosis report for the planning walk (the `session` skill), the pull
+request for the closing walk (the `close` skill): `latch-walk: <table> @
+<ref>`. `<table>` is the walked table (`planning.md` or `closing.md`);
+`<ref>` is a git-reachable reference to the session — its branch, commit, or
+pull request. A walk that fires no row still emits the line; the rows that
+fired, with their acts discharged, are recorded after it. The line is the
+floor gate's presence anchor, grepped at line start — a reworded prefix is a
+walk the gate cannot see, a silent miss.
+
 **Discipline:** hooks may overlap freely across rows, but each owed act has
 exactly one owning row — two rows owing the same act is a merge waiting to
 happen, and the merge is performed, not deferred.

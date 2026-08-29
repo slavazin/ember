@@ -1,0 +1,103 @@
+---
+name: close
+description: The fast-loop close-out, run after implementation from fresh context — record dispositions, walk the retro lenses, file candidates, and walk the closing latches into the session's pull request.
+---
+
+# close — the fast-loop close-out
+
+The close half of the fast loop, split from boot so it runs from fresh context:
+implementation is done, and the close-out judges it without carrying the
+implementer's context. Learning is corpus-carried, not thread-carried — the close
+is where a session deposits what the next boot recovers. The record is the
+session's pull request; git history is the trace, with no session log and no
+carry-forward file.
+
+Load this at close, after implementation. It re-derives its inputs from the branch
+and the pull request, so an agent holding none of the implementation context can
+run it in full.
+
+## The close-out is the pull request
+
+A session does not end without the close-out, and the close-out is the session's
+pull request — the record the next boot reads. The session files this pull request
+whether or not it drafts a candidate; the dispositions and the closing attestation
+are content enough, and the push is approval-gated.
+
+**Do:** file the session's pull request even when no candidate is drafted — the
+dispositions and closing attestation are a durable record on their own.
+**Don't:** don't skip the pull request on a quiet session; an unfiled close-out is
+state the next boot cannot recover.
+
+## 1. Record dispositions
+
+Into the pull request, record one disposition for every entry the session
+consulted:
+
+- **applied** — the entry bound the work and its payload was used.
+- **considered-not-applicable** — the entry was consulted and set aside: its
+  `not-this` matched, or its payload did not bind the work in hand.
+- **fired-off-map** — the entry's hook matched a work shape the corpus does not
+  cover; the fire surfaced a gap, and the observation is a promotion candidate.
+
+**Do:** record a disposition for every consulted entry — the dispositions are the
+telemetry the slow loop promotes from.
+**Don't:** don't leave a consulted entry undisposed; an unrecorded consultation is
+a signal lost forever.
+
+## 2. Walk the retro lenses
+
+A **lens** is a guiding question paired with its counterfactual — an angle on the
+work just done, and the challenge that keeps the angle's answer honest (see the
+lens language in [/corpus/LANGUAGE.md](/corpus/LANGUAGE.md)). Walk each lens
+against the work in hand. An answer that survives its counterfactual is a candidate
+observation, carried to step 3; an answer the counterfactual dissolves is recorded
+as a considered disposition and filed no further.
+
+| Lens | Angle | Counterfactual |
+|---|---|---|
+| missed-signal | What went unnoticed that a store could have surfaced? | What of it was truly unforeseeable — no rule, belief, or case could have caught it? |
+| absent-authority | What rule or belief, had it existed, would have bound this work? | Why would that rule or belief not generalize — where would it misfire or over-reach? |
+| falsifier-clash | Did the work contradict a belief's falsifier or a rule's `not-this`? | Is the clash the falsifier firing — the belief thereby falsified — or the work being wrong while the belief holds? |
+| friction | Where was the work harder than the task warranted? | How much of that friction was irreducible, intrinsic to the problem rather than a missing entry? |
+| better-path | What approach, in hindsight, would have reached the outcome for less? | What made the path taken reasonable given only what was known at the time? |
+| first-error | What did the first attempt get wrong before it was corrected? | Which of those were mechanical slips, and which a missing piece of standing knowledge? |
+
+**Do:** answer a lens only with its counterfactual answered too — the pair is the
+lens, and the counterfactual is what filters slop from the slow loop's input.
+**Don't:** don't file a lens answer whose counterfactual dissolves it; a candidate
+that cannot survive its own challenge is noise the adjudicator must clear.
+
+**Do:** walk every lens, even on a quiet session — a lens that surfaces nothing is
+a considered disposition, not a skipped step.
+**Don't:** don't narrow a lens to the incident's mechanics; the angle is the work
+as it presented, not a single service or symptom.
+
+## 3. File candidates
+
+A **candidate** is an observation — surfaced by a lens or by a fired-off-map
+disposition — that proposes an addition or change to permanent knowledge: a rule, a
+belief, a case, or a vocabulary term. Its shape is the target store's five-slot
+contract; a proposer subagent drafts it through the `corpus-write` skill, filed as
+a draft carrying no id on the session's branch, riding this pull request. Admission
+— the human merge — mints its id.
+
+**Do:** give every candidate the target store's five-slot shape through
+`corpus-write` — the payload and its latch fan, anchored to git-reachable evidence.
+**Don't:** don't file a bare observation as a candidate; an entry with unserviced
+slots is a gap the slow loop cannot adjudicate.
+
+**Do:** file every candidate as a draft on the branch and let the human merge admit
+it.
+**Don't:** don't write to a permanent store directly — the merge is the only
+admitting write.
+
+## 4. Walk the closing latches
+
+Poll each row of `corpus/latches/closing.md` against the work in hand, discharge
+the owed act of every row that fires, and leave the walk's `latch-walk:` line in
+the pull request (format and cautions:
+[/corpus/latches/README.md](/corpus/latches/README.md)).
+
+**Do:** poll every row against the work in hand, even a table that rarely fires.
+**Don't:** don't skim a table because it holds few rows — a rarely-firing row can
+be the one that matters, and skimming is a silent miss.
