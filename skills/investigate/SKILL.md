@@ -100,7 +100,9 @@ file resolving outside this skill.
 > it leaves (request ids, timestamps, hostnames, IPs, file and request paths, SQL and
 > connection detail, credentials or tokens, customer or account identifiers, and any
 > payload value). Then pin a dependency to its exact version, scope to the
-> authoritative domain, and time-bound a live event to the last day. Route by lens:
+> authoritative domain, and time-bound a query to the symptom window — around the
+> onset, not a fixed recency cutoff, so an incident declared before the symptom
+> surfaced still falls in range. Route by lens:
 >
 > | Lens | Ground first against |
 > |---|---|
