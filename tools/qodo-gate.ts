@@ -1,5 +1,5 @@
 // qodo-gate — mechanizes the Article-10 Qodo gate as an optional, bounded, post-close
-// loop (ADR-0016). After `close` files a PR, this posts `/agentic_review`, waits for
+// loop (ADR-0017). After `close` files a PR, this posts `/agentic_review`, waits for
 // Qodo's verdict, and — if any OPEN finding is severity High or above — opens a
 // remediation session on the same PR branch via the TrueForge session API. It NEVER
 // merges: the human merge stays the sole admitting write (constitution Articles 2 & 10).

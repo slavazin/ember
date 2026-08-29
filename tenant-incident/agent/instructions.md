@@ -16,5 +16,5 @@ against the PR the close just filed. The tool posts `/agentic_review`, waits for
 Qodo's verdict, and — if any open finding is severity High or above — opens a
 bounded remediation session on the same PR branch to address it. The gate never
 merges: the human merge stays the only admitting write (constitution Articles 2 &
-10; mechanism ADR-0016). When the toggle is off the step is a no-op, so a run
+10; mechanism ADR-0017). When the toggle is off the step is a no-op, so a run
 without it proceeds exactly as before.

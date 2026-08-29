@@ -4,7 +4,7 @@
 // data sources; every judgment about what those sources mean lives here so it is
 // testable against captured fixtures without touching gh or the TrueForge API.
 //
-// Two Qodo sources, joined by finding title (ADR-0016):
+// Two Qodo sources, joined by finding title (ADR-0017):
 //   - inline comments (GET .../pulls/<pr>/comments) carry SEVERITY, in a shields.io
 //     badge URL (`/badge/High-...`), plus the finding title and its "Agent Prompt".
 //   - the summary comment (GET .../issues/<pr>/comments, author ~ qodo) carries
