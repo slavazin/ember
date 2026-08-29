@@ -22,13 +22,21 @@ run it in full.
 the human whether to finish.** Recording dispositions, walking the retro lenses,
 writing the run's close facts into the report frontmatter, drafting and filing
 candidates through the `corpus-write` skill, walking the closing latches, and
-filing the pull request are the close's own work, run start to finish without a
-confirmation prompt. The environment supplies evidence, not permission to proceed.
-The one human gate in the loop is the merge of the filed pull request (Article 2),
-and that gate is reached by filing the pull request, not by stopping to ask whether
-to file it. The push is approval-gated at the tool boundary — that gate is the
-harness's, discharged when the push is attempted, not a question the close pauses
-on.
+emitting the deposit for filing are the close's own work, run start to finish
+without a confirmation prompt. The environment supplies evidence, not permission to
+proceed.
+
+Completion is emitting the host-consumable deposit artifact, not pushing it. In the
+incident-responder loop the sandbox holds no push credential and opens no pull
+request: the `corpus-write` filing procedure commits the candidate under the deposit
+identity and emits it as a `git format-patch`, and the host helper applies that
+patch, pushes the branch, and opens the pull request off the host (ADR-0009). The
+close's duty is to run every step through to that patch emission without pausing;
+where a context does file by an approval-gated push at the tool boundary, that gate
+is the harness's, discharged when the push is attempted. Either way the close never
+stalls waiting on a push the sandbox cannot perform. The one human gate in the loop
+is the merge of the resulting pull request (Article 2), reached by completing the
+close, not by stopping to confirm.
 
 An unattended close turns on this invariant: a close that halts mid-walk to
 confirm never reaches the pull request the next boot reads.
@@ -148,14 +156,29 @@ report `grade.sh` scores and the multi-run round runner reads through
 and `forecast_hit` — and folds them into the delta ledger; the close owns the two
 it does not already carry, named and spelled exactly as the runner reads them:
 
-- **`disposition:`** — the run's headline disposition, one of `applied`,
-  `considered-not-applicable`, or `fired-off-map` (verbatim, hyphenated as shown):
-  the disposition of the entry the run turned on — the corpus entry that bound the
-  diagnosis (`applied`), was consulted and set aside (`considered-not-applicable`),
-  or whose hook matched a shape the corpus does not cover (`fired-off-map`).
-- **`forecast_hit:`** — a boolean, `true` when the probe's reading confirmed the
-  diagnosis forecast frozen before the probe (the `investigate` skill freezes it),
-  `false` when the probe refuted it.
+- **`disposition:`** — the observed disposition of the **entry under experiment**,
+  one of `applied`, `considered-not-applicable`, or `fired-off-map` (verbatim,
+  hyphenated as shown): the one corpus entry the round pre-registers this scenario to
+  evaluate — the promoted rule, belief, or case whose behaviour the scenario's
+  `expect` predicts — reported as *its* outcome. `applied` when that evaluated entry
+  bound the diagnosis, `considered-not-applicable` when it was consulted and set
+  aside, `fired-off-map` when the evaluated shape had no covering entry. This is one
+  value, not the run's whole disposition set: a run consults many entries with mixed
+  outcomes, each recorded per-entry in the pull-request record, but the frontmatter
+  reports only the evaluated entry's, keyed on the entry the round names — never on
+  "whichever entry bound the diagnosis." Keying on the diagnosis-binding entry would
+  break a control scenario, where the evaluated entry is set aside while a different
+  entry binds the diagnosis: the field would read `applied` and the runner would fold
+  a false control violation into `false_fire`.
+- **`forecast_hit:`** — a boolean scoring the run's **first** frozen forecast: `true`
+  when the probe confirmed the diagnosis the run predicted before any probe ran,
+  `false` when that first probe refuted it. An investigation may cycle — a refuted
+  probe returns to recon and freezes another forecast (the `investigate` skill) — but
+  this field scores only the first, the prediction registered before the corpus had
+  been tested against the surface; a forecast fitted after a refutation is a
+  corrected guess, and scoring it would measure persistence, not calibration. The
+  cost of the extra cycles is already carried by `steps`. The first forecast is the
+  one a promoted entry should move from miss to hit, so it is the one the delta reads.
 
     ---
     incident: <incident-id>
