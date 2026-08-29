@@ -1,0 +1,10 @@
+{
+  "name": "worker-svc",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ordered consumer of a Postgres-table work queue, with head-of-line retry",
+  "main": "worker.js",
+  "dependencies": {
+    "pg": "^8.13.1"
+  }
+}

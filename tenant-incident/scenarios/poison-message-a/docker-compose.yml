@@ -1,0 +1,50 @@
+name: poison-message-a
+
+services:
+  redis:
+    image: redis:7-alpine
+    # Ample and healthy — never the ceiling. The stall is a bad message at the
+    # head, not the broker.
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  dispatcher-svc:
+    build: ./dispatcher-svc
+    environment:
+      REDIS_HOST: redis
+      QUEUE: jobs
+      DLQ: jobs:dlq
+      HTTP_PORT: "9000"
+      WORK_MS: "100"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:9000/healthz',timeout=2).status==200 else 1)"
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    # Direct access to /debug/queue for probing head state during a diagnosis.
+    ports:
+      - "9101:9000"
+
+  # The normal workload — steady, modest, always on. Not a surge; it is the
+  # standing traffic the backlog is measured against.
+  producer:
+    build: ./producer
+    environment:
+      REDIS_HOST: redis
+      QUEUE: jobs
+      RATE: "2"
+    depends_on:
+      redis:
+        condition: service_healthy
+      dispatcher-svc:
+        condition: service_started

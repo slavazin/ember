@@ -11,6 +11,30 @@ No harness dependency: the scenarios stand up with `docker compose` on one
 machine. Provisioning them into a Daytona sandbox is a later step and presumes
 the sandbox runs `docker compose`.
 
+## The battery — classes across recon shapes
+
+The suite spans failure *classes* chosen so each is found by a different
+investigation shape (the recon lenses in the `investigate` skill), and each
+carries a louder **decoy** shape a naive read reaches for first. A corpus only
+learns the shapes its incidents present, so the battery is grown shape-first.
+
+| Scenario | Class | Dominant shape | Decoy | Surface |
+|---|---|---|---|---|
+| [pool-exhaustion-a](/tenant-incident/scenarios/pool-exhaustion-a) | pool-exhaustion | saturation | dependency | orders · Node · PostgreSQL |
+| [pool-exhaustion-b](/tenant-incident/scenarios/pool-exhaustion-b) | pool-exhaustion | saturation | dependency | catalog · Python · Redis |
+| [bad-deploy-a](/tenant-incident/scenarios/bad-deploy-a) | bad-deploy | change | saturation | checkout · Node · latency regression → 504 storm |
+| [bad-deploy-b](/tenant-incident/scenarios/bad-deploy-b) | bad-deploy | change | bad-data | pricing · Python · error-rate regression → 500 spike |
+| [poison-message-a](/tenant-incident/scenarios/poison-message-a) | poison-message | state | saturation | notifications · Python · Redis-list head |
+| [poison-message-b](/tenant-incident/scenarios/poison-message-b) | poison-message | state | saturation | jobs · Node · Postgres-table consumer wedge |
+
+Three classes across three dominant shapes (**saturation**, **change**,
+**state**), each with two distinct surfaces (`a`/`b`) — the surface-distinctness
+a rule bar reads. Within a class the two surfaces differ in language, framework,
+and datastore/broker (and, for `bad-deploy`, in decoy and presentation) while
+sharing the dominant shape, so a duty generalized from both carries a warrant two
+distinct surfaces earned. All six share the presentation-keyed naming and the
+presence-floor grader described below.
+
 ## The recurrence pair (one failure class, two surfaces)
 
 Both scenarios reproduce one class: a bounded datastore-client connection pool
