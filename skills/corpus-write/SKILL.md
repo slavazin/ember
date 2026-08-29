@@ -119,9 +119,12 @@ deposit in the learning arc:
         --trailer 'Deposited-By: incident-responder'
 
 Emit the commit as a formatted patch so its author and trailers leave the sandbox
-intact, and let the harness retrieve that patch:
+intact, and let the harness retrieve that patch. One incident files a candidate
+per surviving lens, and every candidate rides this same procedure, so key the
+patch to the candidate — not the incident alone — or a second candidate's patch
+overwrites the first at the shared path and the host admits only the last:
 
-    git format-patch -1 --stdout > <incident-id>.patch
+    git format-patch -1 --stdout > <incident-id>-<candidate-slug>.patch
 
 The host applies the formatted patch with `git am`, which replays the recorded
 author and the trailer block; a bare working-tree diff carries neither, so the
@@ -151,6 +154,11 @@ cannot separate them.
 so the author and trailers survive retrieval and `git am`.
 **Don't:** don't hand off a bare working-tree diff — it carries neither the
 author nor the trailers, and the signature dies at the sandbox boundary.
+
+**Do:** name the patch per candidate (`<incident-id>-<candidate-slug>.patch`), so
+an incident that files several candidates hands the host every one.
+**Don't:** don't key the patch to the incident alone — a shared filename lets a
+later candidate's patch overwrite an earlier one, and the host admits only the last.
 
 **Do:** let the candidate reach the main line only through a branch and the pull
 request its merge gates.
