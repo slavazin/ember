@@ -11,7 +11,7 @@
 //
 // Governed by /corpus/LANGUAGE.md — this file's own prose obeys it too.
 
-import { readFileSync, readdirSync, existsSync, realpathSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, lstatSync, realpathSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -516,13 +516,16 @@ function constitutionCap(ctx: Ctx): RuleResult {
 }
 
 // The immutability contract for a base-commit path, resolved by CONVENTION — never by reading
-// the working tree — so an entry whose store directory is DELETED in this change is still
+// the working tree alone — so an entry whose store directory is DELETED in this change is still
 // classified and its removal caught (a working-tree-derived scope would let a deletion shrink the
 // gate's own coverage). Returns the frontmatter keys that may flip after admission, or undefined
-// when the path is not a frozen ledger entry. Each store keys off its OWN contract — the incident
-// case bar is never forced onto the build ADR store and the reverse (decision 4 / BS-0012): the
-// build ADR flips status/superseded-by/converged-into, the incident belief flips a human verdict.
-function frozenContractForPath(path: string): readonly string[] | undefined {
+// when the path is not a layer-contract frozen ledger entry. Each store keys off its OWN contract
+// — the incident case bar is never forced onto the build ADR store and the reverse (decision 4 /
+// BS-0012): the build ADR flips status/superseded-by/converged-into, the incident belief a human
+// verdict. `selfDescribing` is the set of tenant store dirs shipping their OWN SCHEMA (in the base
+// or the working tree): those are owned by their own validator, so the generic layer contract must
+// NOT be applied to them — keeping this gate's ownership consistent with discovery's exclusion.
+function frozenContractForPath(path: string, selfDescribing: ReadonlySet<string>): readonly string[] | undefined {
   const name = basename(path);
   // tenant-build's ADR store, bound to its exact tree (BS-0019): ADR-nnnn (exact four digits,
   // never widened — loose-acceptance). This byte-immutability gate is what `adr check` (shape
@@ -530,15 +533,30 @@ function frozenContractForPath(path: string): readonly string[] | undefined {
   if (path.startsWith('tenant-build/corpus/decisions/') && /^ADR-\d{4}\.md$/.test(name)) {
     return ['status', 'superseded-by', 'converged-into'];
   }
-  // Layer ledgers (decisions, beliefs) under any corpus root — the root scaffold or an
-  // incident-tenant instance that inherits the layer D-/B- contract.
-  const m = /^(?:corpus|tenant-[^/]+\/corpus)\/(decisions|beliefs)\/[^/]+$/.exec(path);
-  if (m && m[1] !== undefined) {
-    const store = m[1] as StoreId;
+  // Layer ledgers (decisions, beliefs) under any corpus root — the root scaffold or a tenant
+  // instance that INHERITS the layer D-/B- contract (a tenant store with its own SCHEMA is
+  // self-describing and owned by its own validator, so it is excluded here).
+  const m = /^((?:corpus|tenant-[^/]+\/corpus)\/(decisions|beliefs))\/[^/]+$/.exec(path);
+  if (m && m[1] !== undefined && m[2] !== undefined) {
+    if (selfDescribing.has(m[1])) return undefined;
+    const store = m[2] as StoreId;
     if (!isEntryFile(store, name)) return undefined;
     return store === 'beliefs' ? ['status', 'superseded-by', 'verdict'] : ['status', 'superseded-by'];
   }
   return undefined;
+}
+
+// The tenant store dirs that ship their OWN SCHEMA.md — in the working tree OR the base commit,
+// so a store deleted by this change is still recognized as self-describing. The root scaffold is
+// the layer definition, never self-describing. `dirs` is the frozen pathspec (store directories).
+function selfDescribingStoreDirs(root: string, base: string, dirs: string[]): Set<string> {
+  const out = new Set<string>();
+  for (const dir of dirs) {
+    if (dir.startsWith('corpus/')) continue; // the root scaffold defines the layer contract
+    const schema = `${dir}/SCHEMA.md`;
+    if (existsSync(join(root, schema)) || gitShow(root, base, schema) !== undefined) out.add(dir);
+  }
+  return out;
 }
 
 // The git pathspec for the frozen check, STABLE across this change: corpus (the layer) always,
@@ -612,17 +630,28 @@ function frozenPath(ctx: Ctx): RuleResult {
       },
     ]);
   }
+  const selfDescribing = selfDescribingStoreDirs(ctx.root, base, paths);
   for (const path of lsTreeFiles(ctx.root, base, paths)) {
-    const mutableKeys = frozenContractForPath(path);
-    if (mutableKeys === undefined) continue; // not a frozen ledger entry
+    const mutableKeys = frozenContractForPath(path, selfDescribing);
+    if (mutableKeys === undefined) continue; // not a layer-contract frozen ledger entry
     const baseText = gitShow(ctx.root, base, path);
     if (baseText === undefined) continue;
-    if (!existsSync(join(ctx.root, path))) {
+    // Compare the type WITHOUT following symlinks: a frozen entry is a tracked regular file, so a
+    // gone path is a deletion and a path replaced by a symlink or directory is a type change — both
+    // violations. lstat (not existsSync, which follows links) also keeps read() below off a symlink
+    // target or a directory, where readFileSync would silently follow or throw EISDIR and abort lint.
+    let stat;
+    try {
+      stat = lstatSync(join(ctx.root, path));
+    } catch {
       findings.push({ rule: 'frozen-path', file: path, severity: 'error', message: 'frozen ledger entry deleted or renamed — supersede in place, never remove' });
       continue;
     }
-    const headText = read(ctx.root, path);
-    const diff = frozenDelta(mutableKeys, baseText, headText);
+    if (!stat.isFile()) {
+      findings.push({ rule: 'frozen-path', file: path, severity: 'error', message: 'frozen ledger entry replaced by a symlink or directory — supersede the file in place, never replace it' });
+      continue;
+    }
+    const diff = frozenDelta(mutableKeys, baseText, read(ctx.root, path));
     if (diff) findings.push({ rule: 'frozen-path', file: path, severity: 'error', message: diff });
   }
   return ok(findings);

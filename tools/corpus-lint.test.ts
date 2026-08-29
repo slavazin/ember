@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -585,6 +585,48 @@ test('frozen-path: an ADR convergence with an indentationless converged-into lis
         ADR.replace('status: accepted', 'status: converged\nconverged-into:\n- ADR-0009'),
       ),
     (root) => assert.equal(errors(run(root, 'frozen-path')).length, 0),
+  );
+});
+
+// Qodo #11 re-review (self-described stores misclassified): frozen-path must not apply the LAYER
+// D-/B- contract to a tenant store that ships its OWN SCHEMA — that store is owned by its own
+// validator, exactly as discovery excludes it from the layer entry checks. Determined from
+// base∪working-tree so it survives the deletion case too.
+test('frozen-path: a self-describing tenant store (own SCHEMA) is not held to the layer contract; an inheriting one is', () => {
+  // self-describing: own SCHEMA + a D- entry; a body edit must NOT be flagged by the layer contract
+  withGitRepo(
+    { 'tenant-foo/corpus/decisions/SCHEMA.md': '# own schema\n', 'tenant-foo/corpus/decisions/D-0001.md': DECISION.replace('id: D-0007', 'id: D-0001') },
+    (root) => writeFileSync(join(root, 'tenant-foo/corpus/decisions/D-0001.md'), DECISION.replace('id: D-0007', 'id: D-0001').replace('Trace pool saturation', 'Trace something else')),
+    (root) => assert.equal(errors(run(root, 'frozen-path')).length, 0, 'a self-describing store is owned by its own validator'),
+  );
+  // inheriting: no own SCHEMA under the tenant → the layer contract applies, so a body edit fails
+  withGitRepo(
+    { 'tenant-incident/corpus/decisions/D-0001.md': DECISION.replace('id: D-0007', 'id: D-0001') },
+    (root) => writeFileSync(join(root, 'tenant-incident/corpus/decisions/D-0001.md'), DECISION.replace('id: D-0007', 'id: D-0001').replace('Trace pool saturation', 'Trace something else')),
+    (root) => assert.ok(errors(run(root, 'frozen-path')).some((f) => /frozen body/.test(f.message)), 'an inheriting tenant store is layer-frozen'),
+  );
+});
+
+// Qodo #11 re-review (frozen symlink/directory replacement): existsSync follows symlinks and
+// readFileSync throws on a directory, so a frozen entry replaced by a symlink (to identical
+// content) would pass and one replaced by a directory would crash lint. An lstat regular-file
+// check turns both into a reported violation.
+test('frozen-path: replacing a frozen entry with a symlink or a directory is a reported violation', () => {
+  withGitRepo(
+    { 'corpus/decisions/D-0001.md': DECISION, 'corpus/decisions/other.txt': DECISION },
+    (root) => {
+      rmSync(join(root, 'corpus/decisions/D-0001.md'));
+      symlinkSync('other.txt', join(root, 'corpus/decisions/D-0001.md')); // identical content, but a symlink
+    },
+    (root) => assert.ok(errors(run(root, 'frozen-path')).some((f) => f.file === 'corpus/decisions/D-0001.md' && /symlink or directory/.test(f.message))),
+  );
+  withGitRepo(
+    { 'corpus/decisions/D-0001.md': DECISION },
+    (root) => {
+      rmSync(join(root, 'corpus/decisions/D-0001.md'));
+      mkdirSync(join(root, 'corpus/decisions/D-0001.md')); // a directory where the file was — must not crash lint
+    },
+    (root) => assert.ok(errors(run(root, 'frozen-path')).some((f) => f.file === 'corpus/decisions/D-0001.md' && /symlink or directory/.test(f.message))),
   );
 });
 
