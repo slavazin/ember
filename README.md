@@ -63,7 +63,7 @@ npm run typecheck   # tsc --noEmit over the toolchain
 npm test            # the full test suite (layer tools + the build ADR store)
 npm run gen:check   # verify each store's generated skill index matches a fresh render
 npm run lint        # corpus-lint: entry contract, caps, frozen paths, layer/tenant seam
-npm run adr         # the build's ADR store: `adr index` | `related <id>` | `scopes [paths…]` | `check`
+npm run adr index   # the build's ADR store (also: adr related <id> | adr scopes [paths…] | adr:check)
 ```
 
 `npm run lint` prints its own **residue** — the list of what it checks for
@@ -190,11 +190,18 @@ honestly disclosed, and the review judgments it cannot make stay with the human.
   the metric. `npm run lint` prints the full residue list; each scenario README
   states its grader's blind spots.
 
-- **Floors, not rates.** The demo metric is a **step count** — a proxy for how
-  early the pool was checked, not a measure of diagnosis correctness, latency, or
-  user impact. The incident ledger records counts as *floors* (a minimum
-  observed), not rates. A lower step count is evidence the rule fired; it is not
-  a claim the diagnosis was right.
+- **Floors, not rates, and self-reported.** The demo metric is a **step count** —
+  a proxy for how early the pool was checked, not a measure of diagnosis
+  correctness, latency, or user impact. The count is author-declared (a `steps:`
+  frontmatter field, or an ordered-list scan of the report), and
+  [grade.sh](/tenant-incident/scenarios/pool-exhaustion-a/grade.sh) states in its
+  own residue that it does **not** check the count reflects real work rather than
+  padding. So a lower count is *consistent with* the learned rule firing early; it
+  does not by itself prove the rule fired, that the investigation improved, or
+  that the diagnosis was right. What establishes those is a human reading the
+  report and the promotion PR trail — the designed incident ledger
+  (`corpus/ledgers/incidents.md`, not yet built) would record these counts as
+  *floors* (a minimum observed), never as rates.
 
 - **The delta is designed and instrumented, not yet measured.** As of
   2026-08-28 the incident corpus is genesis-empty and the loop has not run
