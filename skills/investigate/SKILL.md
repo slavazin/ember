@@ -78,21 +78,29 @@ file resolving outside this skill.
 > **World search.** With your lens's signals in hand, ground them against the world
 > through the external-grounding MCP path — the anchored signal is the query seed,
 > so the search direction is set by the lens, not reasoned from scratch. Search
-> comes after the lens; the lens is what tells it where to look.
+> comes after the lens; the lens is what tells it where to look. If that path is not
+> available in this run, report world search as unavailable with the reason, hand
+> back the lens's internal signals, and let the root decide whether the gap blocks
+> the diagnosis — the lens observation stands on its own.
 >
 > Start at the most-implicated dependency's or provider's official status page and
 > check for an active incident overlapping the symptom window: a declared upstream
-> outage ends the search in one step, and the finding is "wait or fail over," not a
-> fix to hunt. Cause and fix are read only from authoritative sources — a status
-> page, the changelog or release notes for the *exact* version, a CVE/GHSA advisory
-> whose affected range covers the version in use, the project's own issue tracker,
-> the official docs. Community answers — Stack Overflow, forums, outage aggregators —
-> corroborate that a problem is real and scope who it hits; they never source a cause.
+> incident, version- and time-matched, is a strong external signal — report it with
+> its window, its scope, and its source, and leave what it means for the diagnosis
+> and the response to the root. Weigh sources by authority: a status page, the
+> changelog or release notes for the *exact* version, a CVE/GHSA advisory whose
+> affected range covers the version in use, the project's own issue tracker, and the
+> official docs are authoritative signals; community answers — Stack Overflow, forums,
+> outage aggregators — corroborate that a problem is real and scope who it hits, and
+> are handed back as corroboration, not as a finding of their own.
 >
-> Seed each query from the signal: quote an error string verbatim with its variable
-> parts stripped (request ids, timestamps, hostnames), pin a dependency to its exact
-> version, scope to the authoritative domain, and time-bound a live event to the last
-> day. Route by lens:
+> Seed each query from the signal, but never send incident data verbatim to an
+> external service: reduce an error to its invariant signature — the stable message
+> and its code or class — and strip everything caller- or environment-specific before
+> it leaves (request ids, timestamps, hostnames, IPs, file and request paths, SQL and
+> connection detail, credentials or tokens, customer or account identifiers, and any
+> payload value). Then pin a dependency to its exact version, scope to the
+> authoritative domain, and time-bound a live event to the last day. Route by lens:
 >
 > | Lens | Ground first against |
 > |---|---|
@@ -103,10 +111,11 @@ file resolving outside this skill.
 > | blast-radius | the provider's health dashboard, then an aggregator for scope and start time |
 > | state | the migration and breaking-change notes, then issues of a data bug at that version |
 >
-> **Do:** trust an external result only where it matches the version in use and the
-> incident's time, and run one query aimed at disconfirming the read before handing
-> it back — stop when an authoritative source confirms the read or two searches
-> surface nothing further.
+> **Do:** weigh an external result by whether it matches the version in use and the
+> incident's time; for a correlational read — a matching issue or thread — run one
+> query aimed at disconfirming it before handing it back, and stop searching once an
+> authoritative version- and time-matched source is in hand or two searches surface
+> nothing further.
 > **Don't:** don't take a matching issue or thread as corroboration when its version
 > or date does not match — a symptom that coincides without the version is the
 > confirmation bias world search is most prone to; a lone forum fix is a hypothesis
