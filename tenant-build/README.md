@@ -1,6 +1,6 @@
 # tenant-build — the build's own corpus
 
-A tenant of the Quartermaster layer whose domain is **this repository's own
+A tenant of the Ember layer whose domain is **this repository's own
 construction**. Where `tenant-incident/` is the showcase guest (an incident
 responder), `tenant-build` is the layer run on the hand that builds it: the
 architecture and process decisions of the entry itself, governed by an instance of

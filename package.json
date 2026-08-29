@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Quartermaster layer tooling — the corpus derivation and lint scripts.",
+  "description": "Ember layer tooling — the corpus derivation and lint scripts.",
   "engines": {
     "node": ">=22"
   },
