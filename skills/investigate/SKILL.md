@@ -36,16 +36,16 @@ so recon never depends on a file resolving outside this skill.
 >   baseline.
 > - **config-differ** — compare configuration state across surfaces, or against a
 >   known-good reference, and report each divergence.
-> - **dependency-checker** — probe the declared upstream and downstream
->   dependencies for reachability, and their utilization and saturation against
->   the limits each declares.
+> - **dependency-checker** — check the declared upstream and downstream
+>   dependencies for reachability, and read their utilization and saturation
+>   against the limits each declares.
 >
 > Treat the names above as shapes, not a catalog to concretize: describe what you
 > observe in the terms the surface presents, and do not narrow a shape to a
 > specific mechanism, component, or service.
 >
 > **What to return.** Return a summary of the signals you observed, each with its
-> anchor — the log reference, the configuration location, the probe reading. You
+> anchor — the log reference, the configuration location, the dependency reading. You
 > hand findings to the dispatching root, which files them; you keep no ledger of
 > your own.
 >
