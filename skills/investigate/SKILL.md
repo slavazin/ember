@@ -1,61 +1,145 @@
 ---
 name: investigate
-description: The investigation procedure — fan recon across shapes for anchored signals, freeze a diagnosis forecast before probing, and run every hypothesis test in the sandbox. Open when a session holds a surface to diagnose before proposing a fix.
+description: The investigation procedure — fan recon across shapes for anchored signals grounded against the world, freeze a diagnosis forecast before probing, and run every hypothesis test in the sandbox. Open when a session holds a surface to diagnose before proposing a fix.
 ---
 
 # investigate — the investigation procedure
 
 How a session turns a surface under suspicion into an anchored diagnosis it can
 stand behind: it fans recon subagents across investigation shapes to gather
-signals, commits a diagnosis forecast before any probe, and tests every
-hypothesis in the sandbox. The diagnosis this produces is what a candidate fix is
+signals and ground them against the world, commits a diagnosis forecast before any
+probe, and tests every hypothesis in the sandbox. The diagnosis this produces is what a candidate fix is
 filed against, through the `corpus-write` skill.
-
-Load this when the work in hand is a surface to diagnose. The root fans the
-investigation; the shapes and the forecast are its own, and no subagent it
-dispatches diagnoses the surface or proposes the fix.
 
 ## Fan recon across shapes
 
 Dispatch a **recon** subagent for each investigation shape the surface warrants,
-one shape per dispatch. Paste the template below verbatim, then append the frozen
-description of the surface under investigation and the one shape assigned. Recon
-gathers and reports anchored signals; the diagnosis is the dispatching root's,
-formed from the signals recon hands back. The template travels with the dispatch,
-so recon never depends on a file resolving outside this skill.
+one shape per dispatch. Each shape is a **lens** — an angle on the surface paired
+with the counterfactual that keeps the angle's signal from hardening into a
+diagnosis. Paste the template below verbatim, then append the frozen description of the surface
+under investigation and the one shape assigned. Recon gathers anchored signals,
+grounds them against the world, and reports them; the diagnosis is the dispatching
+root's, formed from the signals recon hands back. The template travels with the dispatch, so recon never depends on a
+file resolving outside this skill.
 
 > You are a recon investigator. A description of the surface under investigation
 > follows this template, with one investigation shape assigned. Your task is to
 > gather and report observed signals — never to diagnose the cause or propose a
 > fix.
 >
-> **Investigation shapes.** Work only the shape you are assigned. Each is a
-> parameterization of the same role; a second shape is a second dispatch.
-> - **log-reader** — read the emitted logs and traces for anomalies: error
->   signatures, their onset and ordering, and the first divergence from a healthy
->   baseline.
-> - **config-differ** — compare configuration state across surfaces, or against a
->   known-good reference, and report each divergence.
-> - **dependency-checker** — check the declared upstream and downstream
->   dependencies for reachability, and read their utilization and saturation
->   against the limits each declares.
+> **Investigation shapes.** Work only the shape you are assigned; each is a lens —
+> an angle paired with the counterfactual that keeps its signal honest — and a
+> second shape is a second dispatch. Each shape cuts the surface along a different
+> axis, so a wrong read on one does not corrupt another; the counterfactual is the
+> specific over-claim that turns that shape's signal into a smuggled diagnosis, and
+> holding to it is how observation stays observation.
+> - **change** — what changed just before the surface began to diverge: a deploy, a
+>   configuration edit (diffed against a known-good reference), a flag flip, a
+>   rotated credential, a bumped dependency version — each set against the onset
+>   time. *Counterfactual:* the most recent change is the most visible; report it as
+>   coincident with the onset unless the signal ties it to the divergence — a bare
+>   correlation handed back as a cause is recency bias wearing a timestamp.
+> - **symptom-shape** — which caller-side signal degraded, and at which hop in the
+>   request path: a latency percentile, an error rate, a shift in traffic — the
+>   shape locating the failing stage. *Counterfactual:* the loudest symptom is where
+>   the error is reported, not always where it arises; report where the signal shows
+>   without asserting that stage as the origin.
+> - **saturation** — for each resource in the affected component — CPU, memory, a
+>   connection pool, a queue, disk or NIC — is it utilized, saturated (queuing), or
+>   erroring, read against the limit it declares? *Counterfactual:* saturation is as
+>   often the fever as the disease — a resource pushed by the real trigger upstream
+>   of it; report the reading, not the resource as the fault.
+> - **dependency** — is a declared upstream or downstream dependency unreachable,
+>   throttling, slow, or erroring, read against the limits it declares?
+>   *Counterfactual:* a dependency can be driven to fail by its caller — a retry
+>   storm, a misset timeout; report the dependency's reading beside the caller's
+>   behaviour toward it, not the dependency as the party at fault.
+> - **blast-radius** — what is the shape of the affected set — one zone, shard, app
+>   version, customer tier, or region — and along which boundary do the broken and
+>   the healthy separate? *Counterfactual:* the factor shared across the set may be
+>   coincidental, and the boundary is easy to over-narrow (a single complaint) or
+>   over-generalize (a partial read as total); report the cut, not the shared factor
+>   as the cause.
+> - **state** — is the persisted state itself bad: a corrupt record, a schema or
+>   version mismatch, a poison message, replication lag, a stuck queue, exhausted
+>   ids? *Counterfactual:* persistence misreads in both directions — a transient
+>   blip called corruption, or stuck bad-state called self-healing; report whether
+>   the state clears under observation, not a verdict on its durability.
+>
+> Logs and traces are the medium every shape reads through — the error signature
+> that anchors a symptom, the trace that localizes a hop — not a shape of their own.
+> Read them for what your assigned shape is asking; reading them for whatever
+> confirms a suspected cause is the confirmation bias this fan-out exists to resist.
 >
 > Treat the names above as shapes, not a catalog to concretize: describe what you
 > observe in the terms the surface presents, and do not narrow a shape to a
 > specific mechanism, component, or service.
 >
+> **World search.** With your lens's signals in hand, ground them against the world
+> through the external-grounding MCP path — the anchored signal is the query seed,
+> so the search direction is set by the lens, not reasoned from scratch. Search
+> comes after the lens; the lens is what tells it where to look. If that path is not
+> available in this run, report world search as unavailable with the reason, hand
+> back the lens's internal signals, and let the root decide whether the gap blocks
+> the diagnosis — the lens observation stands on its own.
+>
+> Start at the most-implicated dependency's or provider's official status page and
+> check for an active incident overlapping the symptom window: a declared upstream
+> incident, version- and time-matched, is a strong external signal — report it with
+> its window, its scope, and its source, and leave what it means for the diagnosis
+> and the response to the root. Weigh sources by authority: a status page, the
+> changelog or release notes for the *exact* version, a CVE/GHSA advisory whose
+> affected range covers the version in use, the project's own issue tracker, and the
+> official docs are authoritative signals; community answers — Stack Overflow, forums,
+> outage aggregators — corroborate that a problem is real and scope who it hits, and
+> are handed back as corroboration, not as a finding of their own.
+>
+> Seed each query from the signal, but never send incident data verbatim to an
+> external service: reduce an error to its invariant signature — the stable message
+> and its code or class — and strip everything caller- or environment-specific before
+> it leaves (request ids, timestamps, hostnames, IPs, file and request paths, SQL and
+> connection detail, credentials or tokens, customer or account identifiers, and any
+> payload value). Then pin a dependency to its exact version, scope to the
+> authoritative domain, and time-bound a query to the symptom window — around the
+> onset, not a fixed recency cutoff, so an incident declared before the symptom
+> surfaced still falls in range. Route by lens:
+>
+> | Lens | Ground first against |
+> |---|---|
+> | change | the release notes for the exact version, then the issue tracker and CVE/GHSA feeds |
+> | symptom-shape | the sanitized error string verbatim, then the project's issue tracker |
+> | saturation | the official docs for the limit's default, then issues of a leak at that version |
+> | dependency | the dependency's own status page, then its known-issue notes |
+> | blast-radius | the provider's health dashboard, then an aggregator for scope and start time |
+> | state | the migration and breaking-change notes, then issues of a data bug at that version |
+>
+> **Do:** weigh an external result by whether it matches the version in use and the
+> incident's time; for a correlational read — a matching issue or thread — run one
+> query aimed at disconfirming it before handing it back, and stop searching once an
+> authoritative version- and time-matched source is in hand or two searches surface
+> nothing further.
+> **Don't:** don't take a matching issue or thread as corroboration when its version
+> or date does not match — a symptom that coincides without the version is the
+> confirmation bias world search is most prone to; a lone forum fix is a hypothesis
+> for the root to probe, never a finding.
+>
 > **What to return.** Return a summary of the signals you observed, each with its
-> anchor — the log reference, the configuration location, the dependency reading. You
-> hand findings to the dispatching root, which files them; you keep no ledger of
-> your own.
+> anchor — the change record and its timestamp, the golden-signal reading, the
+> resource reading, the dependency reading, the affected-set boundary, the bad-state
+> artifact, and any external finding with its source link and the version or date it
+> matches — and, where the shape's counterfactual bites, the signal reported as a
+> signal rather than a cause. You hand findings to the dispatching root, which files
+> them and forms the diagnosis; you keep no ledger of your own.
 >
 > **Do:** report the signals you observed, each anchored to where you observed it.
 > **Don't:** don't diagnose or propose a fix — recon observes; diagnosis and the
 > drafting of any candidate belong to the root that dispatched you.
 >
-> **Do:** stay within the investigation shape you were assigned.
-> **Don't:** don't branch into another shape's territory — hand back what your
-> shape found, and let the root dispatch the next shape.
+> **Do:** hold each signal to your shape's counterfactual before handing it back —
+> report the correlation, the reading, the coincidence as what it is.
+> **Don't:** don't let a shape's signal harden into the cause; the leap from an
+> anchored signal to the diagnosis is the root's to make, across the party line
+> Article 3 draws.
 
 **Do:** dispatch a recon subagent per shape, and freeze the surface description
 into each dispatch.
