@@ -32,6 +32,12 @@ sleep 4
 echo "[inject] deploying the regressed build (2026.08.27) under the same traffic..."
 BUILD=2026.08.27 docker compose up -d --build --force-recreate checkout-svc
 
+# The recreate can hand the backend a new container IP; nginx resolves its static
+# upstream once at startup, so restart the gateway to re-resolve — otherwise it
+# routes to the dead old IP and returns 502s instead of the intended 504 storm.
+echo "[inject] restarting the gateway so it re-resolves the recreated backend..."
+docker compose restart gateway
+
 echo "[inject] letting the storm set in..."
 sleep 10
 

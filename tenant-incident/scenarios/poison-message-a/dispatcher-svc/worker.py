@@ -90,9 +90,14 @@ def process_once():
         time.sleep(RETRY_BACKOFF)
         return
 
-    # Happy path: a little work, then advance the head.
+    # Happy path: a little work, then remove exactly the message we processed —
+    # by value, not an unconditional LPOP. Between the LINDEX peek above and this
+    # removal, inject.sh may LPUSH the poison onto the head; an unconditional LPOP
+    # would then remove the poison instead of the job just processed, and the
+    # wedge would never set in. LREM by value removes the processed job wherever
+    # it now sits and never touches a concurrently-injected head.
     time.sleep(WORK_MS / 1000.0)
-    r.lpop(QUEUE)
+    r.lrem(QUEUE, 1, raw)
     with lock:
         state.update(head_id=None, head_redelivers=0, head_error=None)
     print(json.dumps({

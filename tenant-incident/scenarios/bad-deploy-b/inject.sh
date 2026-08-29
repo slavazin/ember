@@ -33,6 +33,12 @@ sleep 4
 echo "[inject] deploying the regressed build (2026.09.09) under the same cart mix..."
 BUILD=2026.09.09 docker compose up -d --build --force-recreate pricing-svc
 
+# The recreate can hand the backend a new container IP; nginx resolves its static
+# upstream once at startup, so restart the gateway to re-resolve — otherwise it
+# routes to the dead old IP and returns 502s instead of the intended 200/500 mix.
+echo "[inject] restarting the gateway so it re-resolves the recreated backend..."
+docker compose restart gateway
+
 echo "[inject] letting the error rate set in..."
 sleep 8
 

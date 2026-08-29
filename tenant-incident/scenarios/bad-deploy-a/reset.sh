@@ -14,6 +14,12 @@ SVC="http://localhost:3002"
 echo "[reset] rolling back to the baseline build (2026.08.20)..."
 BUILD=2026.08.20 docker compose up -d --build --force-recreate checkout-svc
 
+# The recreate can hand the backend a new container IP; restart the gateway so
+# nginx re-resolves it, otherwise the health check below fails against the dead
+# old IP even though the baseline restarted successfully.
+echo "[reset] restarting the gateway so it re-resolves the rolled-back backend..."
+docker compose restart gateway
+
 echo "[reset] waiting for the gateway to serve healthy again under the same traffic..."
 ok=0
 for _ in $(seq 1 30); do
