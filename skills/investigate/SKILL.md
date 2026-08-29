@@ -11,6 +11,27 @@ signals and ground them against the world, commits a diagnosis forecast before a
 probe, and tests every hypothesis in the sandbox. The diagnosis this produces is what a candidate fix is
 filed against, through the `corpus-write` skill.
 
+## The root drives the investigation (invariant)
+
+**The root selects the recon shapes and fans them out itself — it never asks the
+human or the environment which shape to run.** The environment is the source of
+*evidence* — logs, metrics, a probe reading requested by name — never the source
+of *strategy* or *execution*. Reading the surface, deciding which lenses it
+warrants, dispatching a recon subagent per shape, forming the diagnosis from the
+signals returned, and choosing the next probe are the root's own acts; handing any
+of them to the environment mistakes the evidence source for a party to the
+investigation and blurs the party line Article 3 draws.
+
+An unattended run turns on this invariant: a fan-out that waits on the environment
+to name its shapes never starts. The environment answers the questions the root
+poses about the surface; it does not tell the root which questions to pose.
+
+**Do:** pick the shapes and fan them out unprompted — read the surface, decide the
+lenses it warrants, and dispatch them without waiting for direction.
+**Don't:** don't ask the human or the environment which shape to run, or pause the
+fan-out for approval — a question about which lens to run mistakes the evidence
+source for the investigator, and stalls an unattended run.
+
 ## Fan recon across shapes
 
 Dispatch a **recon** subagent for each investigation shape the surface warrants,
@@ -76,12 +97,23 @@ file resolving outside this skill.
 > specific mechanism, component, or service.
 >
 > **World search.** With your lens's signals in hand, ground them against the world
-> through the external-grounding MCP path — the anchored signal is the query seed,
-> so the search direction is set by the lens, not reasoned from scratch. Search
-> comes after the lens; the lens is what tells it where to look. If that path is not
-> available in this run, report world search as unavailable with the reason, hand
-> back the lens's internal signals, and let the root decide whether the gap blocks
-> the diagnosis — the lens observation stands on its own.
+> by calling the `search_engine` tool — and `scrape_as_markdown` to read a source it
+> returns. This dispatch is your only context: you do not see the investigate skill,
+> the root's instructions, or the conversation, so the instruction to search lives
+> here and grounding runs only if you act on it — a lens handed back without a
+> `search_engine` call is ungrounded. The anchored signal is the query seed, so the
+> search direction is set by the lens, not reasoned from scratch; search comes after
+> the lens, which is what tells it where to look. The two tools are gated
+> independently — one can be present while the other is not — so degrade on each by
+> name: if `search_engine` is not available to you in this run, say so explicitly
+> with the reason, hand back the lens's internal signals, and let the root decide
+> whether the gap blocks the diagnosis; if `search_engine` returns but
+> `scrape_as_markdown` is unavailable or fails on a source, ground on the search
+> result's own title and summary, report that source as unread with the reason, and
+> continue rather than blocking. The lens observation stands on its own either way.
+> Reporting a tool as unavailable rather than skipping it silently turns a tooling
+> gap into an observable signal, so a later run can tell a plumbing regression from
+> the model choosing not to search.
 >
 > Start at the most-implicated dependency's or provider's official status page and
 > check for an active incident overlapping the symptom window: a declared upstream
