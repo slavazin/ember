@@ -1,14 +1,15 @@
 # SCHEMA — build ADR entry
 
 One file per entry: `ADR-nnnn.md` (four digits, reserve-once, gap-tolerant).
-Drafts carry no id — the id is minted at merge, and the filename equals `<id>.md`.
+An entry's id is reserved when its draft is filed, canonical `ADR-nnnn`, and equal
+to the filename `<id>.md`; the merge is the admission that adjudicates it.
 Everything below the frontmatter is frozen at admission; later change means
 superseding, never editing.
 
 ## Frontmatter
 
 ```yaml
-id:              # ADR-nnnn — assigned at merge; absent in drafts
+id:              # ADR-nnnn — reserved at draft, canonical, equal to the filename
 status: accepted # accepted | superseded | moot | converged  — the only field flipped
 supersedes:      # the ADR-nnnn this replaces; set in the same change that flips the old entry
 superseded-by:   # required when status: superseded — the successor's id

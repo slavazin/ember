@@ -85,15 +85,22 @@ A **candidate** is an observation — surfaced by a lens or by a fired-off-map
 disposition — that proposes an addition or change to permanent knowledge: a rule, a
 belief, a case, or a vocabulary term. It takes the target store's own shape (the
 five-slot contract for the entry stores; the term block for `vocabulary/`); the
-close-out drafts it in place through the `corpus-write` skill and files it as a draft
-on the session's branch, riding this pull request. Admission — the human merge —
-admits it, minting an id for the stores that carry one; a `vocabulary/` term is
-admitted as an id-less block, keyed by the term itself.
+close-out drafts it in place through the `corpus-write` skill, handing it the
+incident's id and class so the signed deposit commit places the entry in the
+learning arc, and files it as a draft on the session's branch, riding this pull
+request. Admission — the human merge — admits it, minting an id for the stores
+that carry one; a `vocabulary/` term is admitted as an id-less block, keyed by the
+term itself.
 
 **Do:** give every candidate the target store's five-slot shape through
 `corpus-write` — the payload and its latch fan, anchored to git-reachable evidence.
 **Don't:** don't file a bare observation as a candidate; an entry with unserviced
 slots is a gap the slow loop cannot adjudicate.
+
+**Do:** hand `corpus-write` the incident's id and class, so the deposit commit is
+signed and groups with the other incidents of its class.
+**Don't:** don't leave the incident coordinates off the deposit — a deposit that
+cannot be grouped and ordered by class is invisible to the learning-delta read-out.
 
 **Do:** file every candidate as a draft on the branch and let the human merge admit
 it.

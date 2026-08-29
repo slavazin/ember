@@ -92,10 +92,40 @@ verdict field empty.
 
 ## Filing
 
-File the draft and the examiner record on the session's branch and push; the push
-is approval-gated. The pull request carries the draft, the examiner record, and
-the evidence; its merge is the durable human gate that admits the entry and mints
-its id.
+File the draft and the examiner record on the session's branch; the push is
+approval-gated. The pull request carries the draft, the examiner record, and the
+evidence; its merge is the durable human gate that admits the entry and mints its
+id.
+
+Build the candidate commit in the sandbox under the deposit identity, so the
+signature rides the patch the host pulls back and survives into the merged
+history. The author is the agent, the committer the host that applies the patch,
+the merge the human that admits it — git's three parties carry the propose,
+apply, and adjudicate roles, so an agent-authored commit leaves the human the
+sole committing and admitting party. Commit under `incident-responder
+<incident-responder@ember.invalid>`, and carry a trailer block that places the
+deposit in the learning arc:
+
+    git -c user.name='incident-responder' \
+        -c user.email='incident-responder@ember.invalid' \
+        commit -m 'Corpus deposit — <class>: <one-line>' -m '' \
+        --trailer 'Incident-Id: <incident-id>' \
+        --trailer 'Incident-Class: <class>' \
+        --trailer 'Corpus-Store: <target store path>' \
+        --trailer 'Deposited-By: incident-responder'
+
+`Incident-Class` groups a class across incidents and the commit's author-date
+orders it, so one incident and a later incident of the same class read out of git
+history directly. The iteration ordinal is that ordering; a deposit carries the
+class and leaves the count to be derived, never freezing a hand-set number.
+
+**Do:** commit the deposit under the `incident-responder` author and the
+`Incident-*` trailer block, so the signature separates it from build work
+wherever the merged history is read.
+**Don't:** don't commit under the ambient sandbox identity or a build co-author
+trailer — an unsigned deposit is indistinguishable from build work in the shared
+pull-request stream, and the learning delta cannot be read from a history that
+cannot separate them.
 
 **Do:** file candidates on a branch and open a pull request.
 **Don't:** don't push to the main line — a direct write bypasses the gate the
