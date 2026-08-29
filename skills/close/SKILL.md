@@ -26,27 +26,17 @@ emitting the deposit for filing are the close's own work, run start to finish
 without a confirmation prompt. The environment supplies evidence, not permission to
 proceed.
 
-Completion is running every close step through to the filed close-out record, not
-pausing partway. That record — the dispositions, the report metadata (`steps`,
-`disposition`, `forecast_hit`), the `latch-walk:` attestation, and any candidate — is
-assembled on the session's branch, and the close owes it whether or not a candidate
-was drafted: the dispositions and the closing attestation are a durable record on
-their own. The sandbox does not push it: filing is approval-gated at the tool
-boundary — that gate is the harness's, not a question the close pauses on — and in
-the incident-responder loop it is host-mediated, the branch's deposit leaving as the
-`corpus-write` patch the host applies and opens the pull request from (ADR-0009). The
-close never stalls waiting on a push the sandbox cannot perform; the one human gate
-is the merge of that pull request (Article 2), reached by completing the close, not
-by stopping to confirm.
-
-**Residue:** the incident-loop host filing path (`tools/patch-to-pr.sh`) admits a
-marked deposit commit and derives the pull-request body from its trailers alone, and
-`corpus-write` exports only the candidate commit. So the close-out record's own
-content — the consulted-entry dispositions, the report metadata, and the
-`latch-walk:` attestation — reaches the pull request only once it rides the exported
-commits, and a candidate-less quiet close reaches it only once that path admits a
-close-out with no deposit commit. That reconciliation is host-side, outside this
-skill's reach, and is disclosed here rather than assumed (Article 8).
+Completion is running every close step through to the hand-off — dispositions
+recorded, retro lenses walked, the run's close facts written to the report
+frontmatter, candidates filed through the `corpus-write` skill, closing latches
+walked — without pausing partway. The environment supplies evidence, not permission
+to proceed. How the result is filed is the `corpus-write` filing procedure's to
+settle (ADR-0009), not this skill's to restate: the push is approval-gated at the
+tool boundary, and in the incident-responder loop the sandbox holds no push
+credential of its own and hands its work to the host. The close's own duty is to
+reach that hand-off without stopping to confirm; it never stalls waiting on a push
+the sandbox cannot perform, and the one human gate is the merge (Article 2), not a
+mid-run approval.
 
 An unattended close turns on this invariant: a close that halts mid-walk to
 confirm never reaches the pull request the next boot reads.
