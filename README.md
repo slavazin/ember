@@ -197,8 +197,9 @@ honestly disclosed, and the review judgments it cannot make stay with the human.
   [grade.sh](/tenant-incident/scenarios/pool-exhaustion-a/grade.sh) states in its
   own residue that it does **not** check the count reflects real work rather than
   padding. So a lower count is *consistent with* the learned rule firing early; it
-  does not by itself prove the rule fired, that the investigation improved, or
-  that the diagnosis was right. What establishes those is a human reading the
+  does not by itself prove the rule fired, that fewer investigation steps were
+  genuinely needed, or that the diagnosis was right. What establishes those is a
+  human reading the
   report and the promotion PR trail — the designed incident ledger
   (`corpus/ledgers/incidents.md`, not yet built) would record these counts as
   *floors* (a minimum observed), never as rates.
