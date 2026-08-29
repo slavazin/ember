@@ -305,6 +305,202 @@ export function parseReportMeta(text: string): ReportMeta {
   return out;
 }
 
+// ── Harness fan-out: the pure TrueForge-REST core ──
+//
+// harness mode (MULTI-RUN-STRATEGY.md §7 artifact 3) drives one TrueForge session per run
+// over the REST API. The network I/O — fetch, poll, download — lives in run-round.ts; the
+// DECISIONS that shape each request and read each response live here, pure and unit-tested:
+// what body to POST, whether a polled turn is done / paused / failed, how to resume a pause,
+// and which emitted artifact is the diagnosis report to grade. Keeping them here means the
+// contract the runner leans on is testable without a live server.
+//
+// The verified REST shapes are recorded in the trueforge-harness-verified memory note
+// (v0.1.4): model FQN is the dashed sanitized name (`openai/gpt-5-4-mini`); a saved agent is
+// booted by name; a turn is `POST …/turns {stream:false, input:[{type:"user.message",…}]}`;
+// turn status lives at `state.status` (=`done`) with output at `state.output.content`; a
+// gated tool call pauses the turn (status still `done`, `state.output` null,
+// `state.required_actions:[{type:"tool.approval_required", thread_id, tool_calls:[{id}]}]`)
+// and is resumed by POSTing a turn whose input is `[{type:"user.tool_approval", thread_id,
+// tool_call_id, approval:{status,reason}}]`; artifacts are exposed as a fenced
+// ```sandbox_artifacts block of `[label](/abs/path)` links, downloaded from
+// GET …/turns/{tid}/download-sandbox-file?path=<abs>.
+
+/**
+ * P3 (frozen-corpus boot) guard — a round must boot a FROZEN corpus/v{k} tag, never the
+ * moving head (MULTI-RUN-STRATEGY.md §3). Returns the blockers that stop a real round: a ref
+ * of `main`/`HEAD`, or anything not of the `corpus/v{k}` tag form, is not a freeze.
+ *
+ * NOTE — the LIVE half of P3 is UNVERIFIED without a running TrueForge. Skill registration
+ * takes a `ref` that may be a tag (trueforge-harness-verified), but skills register GLOBALLY,
+ * not per session, so it is not yet confirmed that a per-session boot reads the corpus AT this
+ * tag rather than at each skill's registered ref. This guard asserts the runner's SIDE (the
+ * tag exists and is frozen); wiring the boot side to honour ref:<tag> is the remaining TODO,
+ * and until it is confirmed live the harness stays behind its RUN_ROUND_HARNESS_WIRED gate.
+ */
+export function frozenCorpusRefBlockers(ref: string): string[] {
+  if (ref === 'main' || ref === 'HEAD' || ref === '') {
+    return [`P3: corpus ref ${JSON.stringify(ref)} is the moving head — a round must boot a frozen corpus/v{k} tag (§3)`];
+  }
+  if (!CORPUS_TAG_RE.test(ref)) {
+    return [`P3: corpus ref ${JSON.stringify(ref)} is not a corpus/v{k} tag — a round boots a frozen tag, not an arbitrary ref (§3)`];
+  }
+  return [];
+}
+
+/** The body for `POST /api/v1/sessions`: boot the SAVED agent by name (its model, skills, and
+ * bright-data preload are baked into the saved AgentSpec — trueforge-harness-verified). */
+export function buildSessionRequest(agent: string): { agent: { name: string } } {
+  return { agent: { name: agent } };
+}
+
+/** The body for `POST /api/v1/sessions/{id}/turns`: the per-scenario incident BRIEF (the
+ * symptom, never the scenario README, which states the cause — SF-2 contamination). */
+export function buildTurnRequest(brief: string): { stream: false; input: { type: 'user.message'; content: string }[] } {
+  return { stream: false, input: [{ type: 'user.message', content: brief }] };
+}
+
+// A pause the harness knows how to resume. The verified required-action type is
+// `tool.approval_required`, resumed with `user.tool_approval`. The task's "tool.response_required"
+// names the same class of turn pause (the turn requires an action before it can continue); the
+// ONLY resume contract confirmed live is the approval one, so that is what we build. Any OTHER
+// required-action type is surfaced as unhandled (an honest error) rather than resumed with a
+// guessed payload — the maintainer wires its contract once its live shape is observed.
+export const APPROVAL_ACTION_TYPE = 'tool.approval_required';
+
+export interface RequiredAction {
+  type: string;
+  thread_id: string;
+  tool_call_ids: string[];
+}
+
+export type TurnDisposition =
+  | { kind: 'running' }
+  | { kind: 'done'; content: string }
+  | { kind: 'action-required'; actions: RequiredAction[] }
+  | { kind: 'failed'; reason: string };
+
+const FAILED_STATUSES = new Set(['failed', 'error', 'errored', 'cancelled', 'canceled']);
+
+function asString(v: unknown): string {
+  return typeof v === 'string' ? v : '';
+}
+
+/** Pull the required-actions out of a turn state, normalising each to a flat
+ * {type, thread_id, tool_call_ids}. Tolerant of missing fields — an action with no tool_calls
+ * yields an empty tool_call_ids, which the resume builder treats as nothing to allow. */
+function readRequiredActions(state: Record<string, unknown>): RequiredAction[] {
+  const raw = state.required_actions;
+  if (!Array.isArray(raw)) return [];
+  const actions: RequiredAction[] = [];
+  for (const a of raw) {
+    if (!isPlainObject(a)) continue;
+    const toolCalls = Array.isArray(a.tool_calls) ? a.tool_calls : [];
+    const ids: string[] = [];
+    for (const tc of toolCalls) {
+      if (isPlainObject(tc) && typeof tc.id === 'string') ids.push(tc.id);
+    }
+    actions.push({ type: asString(a.type), thread_id: asString(a.thread_id), tool_call_ids: ids });
+  }
+  return actions;
+}
+
+/**
+ * Interpret a polled turn into a disposition the runner acts on. Precedence matters: a gated
+ * turn reports `state.status: done` WHILE carrying required_actions (trueforge-harness-verified),
+ * so a pending action is read BEFORE done. Accepts either the whole turn object or its `state`.
+ */
+export function interpretTurnState(turn: unknown): TurnDisposition {
+  if (!isPlainObject(turn)) return { kind: 'failed', reason: 'turn response was not an object' };
+  const state = isPlainObject(turn.state) ? turn.state : turn;
+  const actions = readRequiredActions(state);
+  if (actions.length > 0) return { kind: 'action-required', actions };
+
+  const status = asString(state.status);
+  if (FAILED_STATUSES.has(status)) {
+    const err = isPlainObject(state.error) ? asString(state.error.message) : asString(state.error);
+    return { kind: 'failed', reason: err !== '' ? `turn ${status}: ${err}` : `turn ${status}` };
+  }
+  if (status === 'done' || status === 'completed') {
+    const output = state.output;
+    const content = isPlainObject(output) ? asString(output.content) : '';
+    if (isPlainObject(output) && content !== '') return { kind: 'done', content };
+    // Terminal but no content and no pending action — nothing to grade. Treat as a failure so
+    // the run is excluded from measurement rather than silently graded on an empty report.
+    return { kind: 'failed', reason: 'turn reported done with no output content and no pending action' };
+  }
+  return { kind: 'running' };
+}
+
+export type ApprovalStatus = 'allow' | 'deny';
+
+export interface ResumePlan {
+  input: unknown[]; // the turn input that resumes the handled pauses
+  unhandledTypes: string[]; // required-action types with no confirmed resume contract
+}
+
+/**
+ * Build the resume turn input for a set of pending actions. Every `tool.approval_required`
+ * action is resolved for each of its tool_call_ids under one policy (§ADR-0010 places the real
+ * human gate at the corpus-PR MERGE, not at tool approval, and the built-in sandbox exec cannot
+ * be gated at all — so an unattended diagnosis fan-out defaults to `allow`; nothing it approves
+ * can LAND, since the runner never merges). Actions of any other type are returned in
+ * unhandledTypes so the caller fails the run honestly instead of guessing their resume shape.
+ */
+export function buildApprovalResume(actions: readonly RequiredAction[], policy: ApprovalStatus, reason: string): ResumePlan {
+  const input: unknown[] = [];
+  const unhandledTypes: string[] = [];
+  for (const a of actions) {
+    if (a.type === APPROVAL_ACTION_TYPE) {
+      for (const id of a.tool_call_ids) {
+        input.push({ type: 'user.tool_approval', thread_id: a.thread_id, tool_call_id: id, approval: { status: policy, reason } });
+      }
+    } else {
+      unhandledTypes.push(a.type || '(unnamed)');
+    }
+  }
+  return { input, unhandledTypes };
+}
+
+export interface SandboxArtifact {
+  label: string;
+  path: string;
+}
+
+const ARTIFACTS_FENCE_RE = /```sandbox_artifacts\s*\n([\s\S]*?)```/g;
+const ARTIFACT_LINK_RE = /\[([^\]]*)\]\((\/[^)]+)\)/g;
+
+/**
+ * Parse the fenced ```sandbox_artifacts block(s) a close emits, returning each
+ * `[label](/abs/path)` link. Only absolute paths (the server allowlists exactly the emitted
+ * ones — trueforge-harness-verified) are returned. Order is preserved.
+ */
+export function parseSandboxArtifacts(content: string): SandboxArtifact[] {
+  const out: SandboxArtifact[] = [];
+  for (const block of content.matchAll(ARTIFACTS_FENCE_RE)) {
+    const body = block[1] ?? '';
+    for (const link of body.matchAll(ARTIFACT_LINK_RE)) {
+      out.push({ label: link[1] ?? '', path: link[2] ?? '' });
+    }
+  }
+  return out;
+}
+
+export interface RunArtifacts {
+  reportPath: string | null; // the diagnosis report (.md) grade.sh scores
+  patchPath: string | null; // the git format-patch — the deposit candidate for the slow loop
+}
+
+/**
+ * Select, from the emitted artifacts, the diagnosis REPORT to grade and the format-PATCH to
+ * carry to the slow loop. The report is the first `.md`; the patch is the first `.patch`
+ * (`git format-patch` names them `NNNN-*.patch`). Either may be absent.
+ */
+export function selectRunArtifacts(artifacts: readonly SandboxArtifact[]): RunArtifacts {
+  const report = artifacts.find((a) => a.path.endsWith('.md')) ?? null;
+  const patch = artifacts.find((a) => a.path.endsWith('.patch')) ?? null;
+  return { reportPath: report?.path ?? null, patchPath: patch?.path ?? null };
+}
+
 // ── Run results and ledger folding ──
 
 export type RunStatus = 'graded' | 'blocked' | 'skipped' | 'error';
