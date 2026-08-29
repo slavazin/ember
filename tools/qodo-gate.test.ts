@@ -9,6 +9,7 @@ import {
   flattenPages,
   isGatingSeverity,
   isQodoBot,
+  isQodoVerdictComment,
   normalizeTitle,
   openGatingFindings,
   parseInlineFindings,
@@ -186,6 +187,41 @@ test('isQodoBot authenticates the exact bot login only', () => {
   assert.equal(isQodoBot('qodofake'), false);
   assert.equal(isQodoBot('evil-qodo-impersonator'), false);
   assert.equal(isQodoBot(undefined), false);
+});
+
+// Qodo #23-followup: an in-progress re-review body (title, no bug count) must NOT read as a
+// verdict — else the poll accepts a placeholder and returns a false clean.
+test('isQodoVerdictComment requires the exact bot, the title, and an actual bug count', () => {
+  const verdict = 'Code Review by Qodo\n\n🐞 Bugs (0)  📘 Rule violations (0)\n  1.  X ✓ Resolved';
+  const inProgress = 'Code Review by Qodo\n\n🔄 Reviewing the latest changes…'; // title, no count
+  const notice = '[Code review](url) by qodo was updated up to the latest commit abc123';
+  assert.equal(isQodoVerdictComment(QODO_BOT_LOGIN, verdict), true);
+  assert.equal(isQodoVerdictComment(QODO_BOT_LOGIN, inProgress), false);
+  assert.equal(isQodoVerdictComment(QODO_BOT_LOGIN, notice), false);
+  assert.equal(isQodoVerdictComment('qodofake', verdict), false);
+});
+
+// Qodo #26: the completeness check and parseSummary must share ONE bug-count contract — a
+// body accepted as complete but unparseable would flow to a false clean with bugCount:null.
+test('isQodoVerdictComment does not accept a body parseSummary cannot count', () => {
+  // Emoji-less "Bugs (1)": if accepted here, parseSummary would return bugCount:null.
+  const noEmoji = 'Code Review by Qodo\n\nBugs (1)\n  1.  X';
+  assert.equal(isQodoVerdictComment(QODO_BOT_LOGIN, noEmoji), false);
+  assert.equal(parseSummary(noEmoji).bugCount, null); // the divergence this guards against
+});
+
+test('every body accepted as a verdict yields a non-null parsed bug count', () => {
+  const bodies = [
+    'Code Review by Qodo\n\n🐞 Bugs (0)  📘 Rule violations (0)',
+    'Code Review by Qodo\n\n🐞 Bugs (3)\n  1.  A Action required',
+    'Code Review by Qodo\n\nBugs (1)', // emoji-less — must be rejected, not mis-accepted
+    'Code Review by Qodo\n\n🔄 Reviewing…',
+  ];
+  for (const body of bodies) {
+    if (isQodoVerdictComment(QODO_BOT_LOGIN, body)) {
+      assert.notEqual(parseSummary(body).bugCount, null, `accepted but unparseable: ${body}`);
+    }
+  }
 });
 
 // Qodo #23-4: a resolved item must not hide a distinct open High with a colliding title.

@@ -25,6 +25,21 @@ export function isQodoBot(login: string | undefined): boolean {
   return login === QODO_BOT_LOGIN;
 }
 
+// The verdict's bug-count line — the ONE contract the completeness check and the parser both
+// key on, defined once so they can never diverge: a body accepted as a complete verdict is
+// exactly one `parseSummary` can read a non-null count from. (Two separate matchers — one
+// emoji-optional here, one emoji-required in the parser — let an "accepted" verdict parse to
+// bugCount:null and slip through as a false clean.) Qodo emits the 🐞-prefixed form.
+const BUG_COUNT_PATTERN = '🐞 Bugs \\((\\d+)\\)';
+
+/** True only for a COMPLETE Qodo code-review verdict from the exact bot — the title plus an
+ * actual bug count in the exact form `parseSummary` reads. Excludes "updated up to the latest
+ * commit" notices and in-progress (title-only) bodies, so the gate never mistakes a
+ * placeholder — or a body it cannot parse — for a clean verdict. */
+export function isQodoVerdictComment(login: string | undefined, body: string): boolean {
+  return isQodoBot(login) && /Code Review by Qodo/.test(body) && new RegExp(BUG_COUNT_PATTERN).test(body);
+}
+
 /** A Qodo inline finding: severity + title from the inline comment, plus its anchor. */
 export interface InlineFinding {
   title: string;
@@ -120,7 +135,7 @@ export function parseInlineFindings(comments: readonly RawInlineComment[]): Inli
   return findings;
 }
 
-const BUG_COUNT_RE = /🐞 Bugs \((\d+)\)/g;
+const BUG_COUNT_RE = new RegExp(BUG_COUNT_PATTERN, 'g'); // same contract isQodoVerdictComment gates on
 // A summary finding line, after HTML is stripped: `  3.  ADR draft ID contradiction ✓ Resolved 🐞 Bug …`
 const SUMMARY_LINE_RE = /^\s*\d+\.\s+(.+?)\s*(✓ Resolved|Action required|🐞|≡|$)/;
 

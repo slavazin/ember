@@ -24,6 +24,7 @@ import {
   countGateMarkers,
   flattenPages,
   isQodoBot,
+  isQodoVerdictComment,
   openGatingFindings,
   parseInlineFindings,
   parseSummary,
@@ -135,10 +136,12 @@ interface IssueComment {
   user: { login: string };
 }
 
-/** The Qodo review summary comment (from the exact bot, body "Code Review by Qodo"), latest
- * if several. Authenticating the exact principal stops a spoofed summary from being accepted. */
+/** The latest COMPLETE Qodo verdict comment (exact bot, title, and an actual bug count).
+ * Authenticating the exact principal stops a spoofed summary; requiring the verdict marker
+ * stops an in-progress placeholder or a "…updated up to the latest commit" notice from being
+ * read as the verdict. */
 function latestQodoSummary(comments: readonly IssueComment[]): IssueComment | undefined {
-  const summaries = comments.filter((c) => isQodoBot(c.user.login) && /Code Review by Qodo/.test(c.body));
+  const summaries = comments.filter((c) => isQodoVerdictComment(c.user.login, c.body));
   if (summaries.length === 0) return undefined;
   return summaries.reduce((a, b) => (a.updated_at >= b.updated_at ? a : b));
 }
@@ -209,6 +212,11 @@ async function main(argv: string[]): Promise<number> {
   const inlineRaw = ghApiList<RawInlineComment>(`repos/${args.repo}/pulls/${args.pr}/comments`);
   const inline: InlineFinding[] = parseInlineFindings(inlineRaw.filter((c) => isQodoBot(c.user?.login)));
   const summary = parseSummary(summaryComment.body);
+  // Defense in depth: a comment accepted as complete must yield a parseable count. If the
+  // parser and the completeness check ever diverge, fail inconclusive — never to clean.
+  if (summary.bugCount === null) {
+    fail('accepted a Qodo verdict with no parseable bug count — inconclusive, surface to human');
+  }
   const openHigh = openGatingFindings(inline, summary);
 
   // Round = this gate's own trigger markers on the PR, not every /agentic_review mention.
