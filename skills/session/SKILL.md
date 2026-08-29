@@ -1,16 +1,17 @@
 ---
 name: session
-description: The fast-loop boot — load at session start to orient from the corpus, resume any unfinished work, and walk the planning latches. The close half is its own skill, `close`.
+description: The fast-loop working-session protocol — orient from the corpus at start, resume any unfinished work, walk the planning latches, and keep the consultation record the close reads. The close-out is its own skill, `close`.
 ---
 
-# session — the fast loop, boot half
+# session — the fast loop, working-session half
 
-The per-session boot: how a session orients from the corpus at start. Loaded by
-boot obligation, after the constitution. Learning is corpus-carried, not
-thread-carried — a session that starts from an empty context recovers everything
-from the stores, so the boot and the close are the whole memory. The close half —
-dispositions, retro lenses, candidates — is the `close` skill, run from fresh
-context after implementation.
+The working session's protocol: how a session orients from the corpus at start,
+and the consultation record it keeps as it works. Loaded by boot obligation, after
+the constitution. Learning is corpus-carried, not thread-carried — a session that
+starts from an empty context recovers everything from the stores, so the boot and
+the close are the whole memory. The close-out half — dispositions, retro lenses,
+candidates — is the `close` skill, run from fresh context after implementation; it
+reads the consultation record the working session keeps.
 
 ## Boot
 
@@ -43,6 +44,21 @@ admitted entry in the shape-matched stores.
 **Don't:** don't reach back into a prior session's pull request to recover
 learning; learning is corpus-carried, and a merged request's payload is read from
 the stores, not from the request.
+
+## Keep the consultation record
+
+As the session works, record each entry it consults into the work product on the
+branch — the entry's id and whether it was applied or considered — as the
+consultation happens. The planning latch walk starts this record; the work appends
+to it. This record is what the fresh-context close reads to disposition every
+consultation, including the considered-and-set-aside ones that leave no other
+trace on the branch. The close assigns the final disposition; the working session
+supplies the set.
+
+**Do:** append each consulted entry to the work product as it is consulted — while
+the context that holds it is still live.
+**Don't:** don't defer the record to the close; the close runs from fresh context
+and cannot recover a consultation the working session did not write down.
 
 ## Close
 

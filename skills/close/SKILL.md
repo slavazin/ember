@@ -30,8 +30,10 @@ state the next boot cannot recover.
 
 ## 1. Record dispositions
 
-Into the pull request, record one disposition for every entry the session
-consulted:
+Read the consultation record the working session kept in the work product on the
+branch — the entries it marked applied or considered as it worked (see the
+`session` skill) — and into the pull request record one disposition for every
+entry in it:
 
 - **applied** — the entry bound the work and its payload was used.
 - **considered-not-applicable** — the entry was consulted and set aside: its
@@ -39,10 +41,11 @@ consulted:
 - **fired-off-map** — the entry's hook matched a work shape the corpus does not
   cover; the fire surfaced a gap, and the observation is a promotion candidate.
 
-**Do:** record a disposition for every consulted entry — the dispositions are the
-telemetry the slow loop promotes from.
-**Don't:** don't leave a consulted entry undisposed; an unrecorded consultation is
-a signal lost forever.
+**Do:** disposition every entry in the consultation record — the dispositions are
+the telemetry the slow loop promotes from.
+**Don't:** don't infer the consultation set from the diff; an entry consulted and
+set aside leaves no trace there, so a set reconstructed from the diff silently
+drops exactly the considered-not-applicable signal.
 
 ## 2. Walk the retro lenses
 
@@ -76,10 +79,12 @@ as it presented, not a single service or symptom.
 
 A **candidate** is an observation — surfaced by a lens or by a fired-off-map
 disposition — that proposes an addition or change to permanent knowledge: a rule, a
-belief, a case, or a vocabulary term. Its shape is the target store's five-slot
-contract; a proposer subagent drafts it through the `corpus-write` skill, filed as
-a draft carrying no id on the session's branch, riding this pull request. Admission
-— the human merge — mints its id.
+belief, a case, or a vocabulary term. It takes the target store's own shape (the
+five-slot contract for the entry stores; the term block for `vocabulary/`); a
+proposer subagent drafts it through the `corpus-write` skill and files it as a draft
+on the session's branch, riding this pull request. Admission — the human merge —
+admits it, minting an id for the stores that carry one; a `vocabulary/` term is
+admitted as an id-less block, keyed by the term itself.
 
 **Do:** give every candidate the target store's five-slot shape through
 `corpus-write` — the payload and its latch fan, anchored to git-reachable evidence.
