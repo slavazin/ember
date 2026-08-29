@@ -12,6 +12,8 @@ import {
   parseScore,
   parseReportMeta,
   foldRoundToLedgerRows,
+  measuredResults,
+  measuredLedgerRows,
   quantile,
   renderLedgerRows,
   renderRoundReport,
@@ -239,6 +241,44 @@ test('foldRoundToLedgerRows yields n/a stats for an ungraded (blocked) scenario'
   assert.equal(rows[0]!.steps_median, 'n/a');
   assert.equal(rows[0]!.steps_iqr, 'n/a');
   assert.equal(rows[0]!.grade_pass, '0/0');
+});
+
+test('measuredResults keeps only real graded runs (excludes fixtures, blocked, error)', () => {
+  const spec: RoundSpec = {
+    round: 0,
+    corpus_tag: 'corpus/v0',
+    scenarios: [{ class: 'pool-exhaustion', surface: 'a', role: 'anchor', runs: 4, expect: 'fired-off-map' }],
+  };
+  const runs = expandRuns(spec);
+  const results: RunResult[] = [
+    mkResult(runs[0]!, { status: 'graded', steps: 5, gradePass: true, reportIsFixture: false }),
+    mkResult(runs[1]!, { status: 'graded', steps: 3, gradePass: true, reportIsFixture: true }), // fixture — excluded
+    mkResult(runs[2]!, { status: 'error' }), // failed inject/reset — excluded
+    mkResult(runs[3]!, { status: 'blocked' }), // unbuilt — excluded
+  ];
+  const measured = measuredResults(results);
+  assert.equal(measured.length, 1);
+  assert.equal(measured[0]!.run.runIndex, 1);
+});
+
+test('measuredLedgerRows drops scenarios with no measured run (no false baseline from fixtures)', () => {
+  const spec: RoundSpec = {
+    round: 0,
+    corpus_tag: 'corpus/v0',
+    scenarios: [
+      { class: 'pool-exhaustion', surface: 'a', role: 'anchor', runs: 1, expect: 'fired-off-map' }, // real graded
+      { class: 'pool-exhaustion', surface: 'b', role: 'anchor', runs: 1, expect: 'fired-off-map' }, // fixture only
+    ],
+  };
+  const runs = expandRuns(spec);
+  const results: RunResult[] = [
+    mkResult(runs[0]!, { status: 'graded', steps: 7, gradePass: true, reportIsFixture: false }),
+    mkResult(runs[1]!, { status: 'graded', steps: 3, gradePass: true, reportIsFixture: true }),
+  ];
+  const rows = measuredLedgerRows(spec, results);
+  assert.equal(rows.length, 1); // only the real-graded scenario gets a row
+  assert.equal(rows[0]!.surface, 'a');
+  assert.equal(rows[0]!.steps_median, '7');
 });
 
 test('renderLedgerRows emits one pipe-delimited line per row with — for empty lists', () => {

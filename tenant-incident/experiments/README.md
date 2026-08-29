@@ -61,11 +61,13 @@ npm run round -- tenant-incident/experiments/rounds/round-0.yml
 # local: drive the docker-compose scenarios directly — inject -> grade a run report -> reset.
 # Exercises the battery + grading + ledger pipeline without the harness. A run's diagnosis
 # report comes from --reports-dir/<scenario>/<n>.md; absent that, the scenario fixture stands
-# in (labeled a fixture, never counted as a real run).
+# in for pipeline shake-out. A failed inject or reset makes the run an error, and a
+# fixture-backed run is never measured evidence — neither reaches the ledger (see below).
 npm run round -- rounds/round-0.yml --mode local --reports-dir ./reports --emit-ledger
 
 # harness: the real fan-out — N concurrent TrueForge sessions, OpenAI-only (ISS-003).
-# Gated behind the prerequisites below; it refuses to run a real round until they are asserted.
+# Gated behind the prerequisites below; it refuses a real round until they are asserted AND
+# the live fan-out is built and verified (the maintainer sets RUN_ROUND_HARNESS_WIRED=1 then).
 npm run round -- rounds/round-0.yml --mode harness --prereqs-confirmed
 ```
 
@@ -86,6 +88,15 @@ adjudicating the union of candidates and merging, then tagging the next corpus v
 the human gate (Art. 2). The only durable write the runner makes is appending measured rows
 to the ledger, and that append never rewrites a prior row (Art. 9).
 
+### Only measured evidence reaches the ledger
+
+A ledger row is measured evidence, so the ledger — the "append these" report section and the
+`--emit-ledger` append alike — carries **only real graded runs**. A **fixture** stands in for
+pipeline shake-out and is never counted; an **unprovisioned or unrestored** run (a failed
+`inject.sh` or `reset.sh`) is an error, not a measurement. A scenario with no measured run
+yields no row at all — never a misleading `n/a` row — so a canned three-step fixture or a
+stack that never came up cannot establish a false cold baseline.
+
 ## Prerequisites for a real round
 
 `plan` and `local` mode proceed without these; a real (`harness`) round cannot, and the runner
@@ -101,9 +112,17 @@ enforces that in its preflight.
   a round's candidates a tenant home (Art. 7). A round without P2 grows the wrong tree.
 - **P3 — corpus tagging.** The runner tags before a round; the skill registration must honour
   `ref:<tag>` (not only `ref:main`) so a round boots a frozen corpus, not the moving head.
+- **P4 — close-output contract.** The `close` skill must record each entry's close disposition
+  and the forecast outcome as `disposition:` / `forecast_hit:` in the run report frontmatter —
+  the runner's machine-readable interface (`parseReportMeta`). Until the skill writes them, the
+  `applied`/`cna`/`fired_off_map` and `forecast_hit` columns read empty even on real runs.
 
 The `harness` preflight also requires `TRUEFORGE_URL` and an `openai/*` `TRUEFORGE_MODEL`
-(ISS-003: Anthropic identity-linked keys fail).
+(ISS-003: Anthropic identity-linked keys fail), and — because the live fan-out
+(`harnessRun`: session → turn → poll → artifact-grade) depends on those same unbuilt contracts
+and cannot be verified here — it stays blocked until the maintainer builds and verifies that
+path and sets `RUN_ROUND_HARNESS_WIRED=1`. The mode is defined and gated; its live fan-out
+lands with the prerequisites, so a real round is never silently a no-op.
 
 ## Layer or tenant?
 

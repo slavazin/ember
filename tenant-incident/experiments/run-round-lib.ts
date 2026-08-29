@@ -416,6 +416,28 @@ export function foldRoundToLedgerRows(spec: RoundSpec, results: readonly RunResu
   return rows;
 }
 
+/**
+ * The measured subset of a round's results: a real graded run only. A fixture stands in for
+ * pipeline shake-out and is never counted (README promise); a blocked or errored run — an
+ * unbuilt scenario, a failed inject/reset — was not measured. This is the gate that keeps a
+ * canned three-step fixture or an unprovisioned stack out of the durable ledger.
+ */
+export function measuredResults(results: readonly RunResult[]): RunResult[] {
+  return results.filter((r) => r.status === 'graded' && !r.reportIsFixture);
+}
+
+/**
+ * Fold ONLY the measured runs, and only for the scenarios that had one, into ledger rows.
+ * A scenario with no measured run yields no row at all (not a misleading n/a row), so the
+ * durable ledger carries measured evidence exclusively.
+ */
+export function measuredLedgerRows(spec: RoundSpec, results: readonly RunResult[]): LedgerRow[] {
+  const measured = measuredResults(results);
+  const names = new Set(measured.map((r) => r.run.scenarioName));
+  const filtered: RoundSpec = { ...spec, scenarios: spec.scenarios.filter((s) => names.has(`${s.class}-${s.surface}`)) };
+  return foldRoundToLedgerRows(filtered, measured);
+}
+
 // ── Rendering ──
 
 // The ledger table header (§6 schema). The producer and any hand-append share this one
@@ -519,11 +541,15 @@ export function renderRoundReport(
   }
 
   lines.push('');
-  lines.push('## Ledger rows (append these to ledger.md)');
+  lines.push('## Measured ledger rows (append these to ledger.md)');
   lines.push('');
-  lines.push(LEDGER_HEADER);
-  lines.push(LEDGER_SEPARATOR);
-  lines.push(renderLedgerRows(rows));
+  if (rows.length === 0) {
+    lines.push('_No measured rows this round — a plan/blocked round, or every graded run was a fixture stand-in. Fixtures and unprovisioned runs are never counted as measured evidence._');
+  } else {
+    lines.push(LEDGER_HEADER);
+    lines.push(LEDGER_SEPARATOR);
+    lines.push(renderLedgerRows(rows));
+  }
 
   if (ctx.prerequisiteNotes.length > 0) {
     lines.push('');

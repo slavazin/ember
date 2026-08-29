@@ -37,6 +37,7 @@ import {
   parseScore,
   parseReportMeta,
   foldRoundToLedgerRows,
+  measuredLedgerRows,
   renderRoundReport,
   renderLedgerRows,
   LEDGER_HEADER,
@@ -219,62 +220,77 @@ function planRun(run: PlannedRun): RunResult {
   };
 }
 
+// A non-measured result (blocked/error). Keeps the RunResult shape in one place so the
+// many early returns below cannot drift a field.
+function nonMeasured(run: PlannedRun, status: 'blocked' | 'error', note: string): RunResult {
+  return {
+    run,
+    status,
+    steps: null,
+    gradePass: null,
+    gates: {},
+    disposition: null,
+    forecastHit: null,
+    reportPath: null,
+    reportIsFixture: false,
+    note,
+  };
+}
+
 function localRun(run: PlannedRun, reportsDir: string | null, maxSteps: number | null): RunResult {
   if (!scenarioExists(run.scenarioName)) {
-    return {
-      run,
-      status: 'blocked',
-      steps: null,
-      gradePass: null,
-      gates: {},
-      disposition: null,
-      forecastHit: null,
-      reportPath: null,
-      reportIsFixture: false,
-      note: 'scenario not built (battery expansion pending, §7 artifact 1)',
-    };
+    return nonMeasured(run, 'blocked', 'scenario not built (battery expansion pending, §7 artifact 1)');
   }
   const report = locateReport(run, reportsDir);
   if (report === null) {
-    return {
-      run,
-      status: 'error',
-      steps: null,
-      gradePass: null,
-      gates: {},
-      disposition: null,
-      forecastHit: null,
-      reportPath: null,
-      reportIsFixture: false,
-      note: 'no diagnosis report — supply --reports-dir/<scenario>/<n>.md or a scenario fixture',
-    };
+    return nonMeasured(run, 'error', 'no diagnosis report — supply --reports-dir/<scenario>/<n>.md or a scenario fixture');
   }
 
+  // Provisioning must succeed for the run to be measured evidence. A failed inject means the
+  // scenario was never stood up, so grading a report against no stack is not a real run — it
+  // is an error, excluded from the report's measured rows and the ledger. Cleanup still runs.
   info(`[${run.label}] inject`);
   const injected = runScript(run.scenarioName, 'inject.sh');
+  if (injected.code !== 0) {
+    info(`[${run.label}] reset (after failed inject)`);
+    runScript(run.scenarioName, 'reset.sh');
+    return nonMeasured(run, 'error', `inject.sh exited ${injected.code} — scenario not provisioned; run excluded from measurement`);
+  }
+
+  let graded: RunResult;
   try {
     const gradeArgs = maxSteps === null ? [report.path] : [report.path, '--max-steps', String(maxSteps)];
-    const graded = runScript(run.scenarioName, 'grade.sh', gradeArgs);
-    const score = parseScore(graded.stdout);
+    const result = runScript(run.scenarioName, 'grade.sh', gradeArgs);
+    const score = parseScore(result.stdout);
     const meta = parseReportMeta(readFileSync(report.path, 'utf8'));
     const source = report.isFixture ? 'graded the scenario fixture (stand-in — not a real run)' : 'graded a run report';
-    const provisioning = injected.code === 0 ? '' : `; inject.sh exited ${injected.code} (stack not provisioned — the grade scores the report only)`;
-    return {
+    graded = {
       run,
       status: 'graded',
       steps: score?.steps ?? meta.steps ?? null,
-      gradePass: graded.code === 0,
+      gradePass: result.code === 0,
       gates: score?.gates ?? {},
       disposition: meta.disposition ?? null,
       forecastHit: meta.forecast_hit ?? null,
       reportPath: report.path,
       reportIsFixture: report.isFixture,
-      note: source + provisioning,
+      note: source,
     };
-  } finally {
-    info(`[${run.label}] reset`);
+  } catch (e) {
+    info(`[${run.label}] reset (after grade error)`);
     runScript(run.scenarioName, 'reset.sh');
+    return nonMeasured(run, 'error', `grading threw: ${(e as Error).message}`);
   }
+
+  // A failed reset leaves the environment dirty, which casts doubt on the controlled
+  // comparison for the rest of the round (§3). Downgrade the run to error rather than let a
+  // measurement from an unrestored environment enter the ledger.
+  info(`[${run.label}] reset`);
+  const reset = runScript(run.scenarioName, 'reset.sh');
+  if (reset.code !== 0) {
+    return nonMeasured(run, 'error', `${graded.note}; reset.sh exited ${reset.code} — environment not restored, run excluded from measurement`);
+  }
+  return graded;
 }
 
 // The prerequisites a real (harness) round depends on. plan/local proceed without them; a
@@ -283,6 +299,7 @@ const PREREQUISITES = [
   'P1 (SF-1) self-driving runs: the inspector must not pause to ask the human which shape to run or whether to finish — invariant framing in investigate/close, or ask_user_question disabled. Without P1 there is no unattended fan-out.',
   'P2 (SF-8) tenant incident/case store under tenant-incident/corpus/: deposits currently land in the layer store; a round without P2 grows the wrong tree.',
   'P3 corpus tagging: confirm ref:<tag> (not only ref:main) boots a frozen corpus, so a round pins a version rather than the moving head.',
+  'P4 close-output contract: the close skill must record each entry\'s close disposition and the forecast outcome as `disposition:`/`forecast_hit:` in the run report frontmatter — the runner\'s machine-readable interface (parseReportMeta). Until the skill writes them, the applied/cna/fired_off_map and forecast_hit columns read empty even on real runs.',
 ];
 
 interface HarnessConfig {
@@ -301,10 +318,18 @@ function harnessPreflight(cli: Cli): HarnessConfig | null {
   const model = process.env.TRUEFORGE_MODEL ?? '';
   const agent = process.env.TRUEFORGE_AGENT ?? 'incident-responder';
   const blockers: string[] = [];
-  if (!cli.prereqsConfirmed) blockers.push('P1/P2/P3 are not asserted — re-run with --prereqs-confirmed once they hold (see the prerequisite list)');
+  if (!cli.prereqsConfirmed) blockers.push('P1/P2/P3/P4 are not asserted — re-run with --prereqs-confirmed once they hold (see the prerequisite list)');
   if (url === '') blockers.push('TRUEFORGE_URL is unset (e.g. http://127.0.0.1:8790)');
   if (model === '') blockers.push('TRUEFORGE_MODEL is unset');
   else if (!model.startsWith('openai/')) blockers.push(`TRUEFORGE_MODEL is ${model} — only openai/* is a proven path (ISS-003; Anthropic identity-linked keys fail)`);
+  // The live fan-out (session/turn/poll/artifact-grade over the TrueForge REST API) is not
+  // wired yet: it depends on contracts that do not exist (P2 tenant store, P4 close-output,
+  // the per-scenario incident brief and artifact-retrieval path) and cannot be verified here
+  // against a live server. Rather than pass preflight and then no-op, harness mode blocks on
+  // this until the path is built AND verified — set RUN_ROUND_HARNESS_WIRED=1 only then.
+  if (process.env.RUN_ROUND_HARNESS_WIRED !== '1') {
+    blockers.push('the live TrueForge fan-out is not wired yet — it lands with P1/P2/P3/P4 and a confirmed server; the maintainer sets RUN_ROUND_HARNESS_WIRED=1 once harnessRun is built and verified end-to-end');
+  }
   if (blockers.length > 0) {
     info('harness mode is blocked — a real round cannot run until:');
     for (const b of blockers) info(`  - ${b}`);
@@ -314,38 +339,24 @@ function harnessPreflight(cli: Cli): HarnessConfig | null {
 }
 
 /**
- * The real fan-out, kept behind harnessPreflight. It drives one TrueForge session per run
- * over the REST API — POST session (agent by name, model FQN, bright-data preloaded), POST
- * turn with the incident brief, poll to completion, retrieve the close's diagnosis report,
- * grade it. It files to the run's own branch and NEVER merges. This path is unexercised
- * against a live server here; the orchestration is structured so the pure grading/folding
- * downstream is identical to local mode.
+ * The real fan-out, reached only past harnessPreflight (which today refuses unless the
+ * maintainer has set RUN_ROUND_HARNESS_WIRED=1 — see the preflight). The intended sequence,
+ * one TrueForge session per run over the REST API, files to the run's own branch and NEVER
+ * merges:
+ *   POST {url}/api/v1/sessions             { agent, model, ... }         — model FQN, bright-data preload:true
+ *   POST {url}/api/v1/sessions/{id}/turns  { message: <incident brief> } — the scenario's symptom, not its README
+ *   poll GET …/turns/{turnId}              until terminal, resuming tool.response_required pauses
+ *   download the close's diagnosis report artifact → grade with the scenario grade.sh, then
+ *   fold through the SAME parseScore/parseReportMeta path as local mode.
+ * The building of this path (brief source, artifact retrieval, branch handling) is the work P1
+ * through P4 unblock; it is left unbuilt rather than shipped guessing at contracts that do not
+ * exist. If it is entered before being built, it returns an error, never a false measurement.
  */
 async function harnessRun(run: PlannedRun, cfg: HarnessConfig, reportsDir: string | null, maxSteps: number | null): Promise<RunResult> {
-  // The session/turn REST shapes and the model FQN + preload:true requirement are recorded
-  // in the harness notes (memory: trueforge-harness-verified). The call sequence:
-  //   POST {url}/api/v1/sessions   { agent: cfg.agent, model: cfg.model, branch: run.branch }
-  //   POST {url}/api/v1/sessions/{id}/turns  { message: <incident brief for scenario> }
-  //   poll GET  …/turns/{turnId}   until state=complete, resuming tool.response_required
-  //   download the close's diagnosis report artifact → grade with the scenario grade.sh
-  // Implemented as a thin, injectable step so a real round can wire it without touching the
-  // grading/folding core. Held unimplemented past the preflight until P1/P3 land and a live
-  // server is confirmed (§7 prerequisites) rather than shipped half-exercised.
   void cfg;
   void reportsDir;
   void maxSteps;
-  return {
-    run,
-    status: 'blocked',
-    steps: null,
-    gradePass: null,
-    gates: {},
-    disposition: null,
-    forecastHit: null,
-    reportPath: null,
-    reportIsFixture: false,
-    note: 'harness fan-out not wired to a live server — land P1/P3 and confirm the TrueForge REST path first',
-  };
+  return Promise.resolve(nonMeasured(run, 'error', 'harnessRun is not built — RUN_ROUND_HARNESS_WIRED was set but the live fan-out has not been implemented; build it before enabling'));
 }
 
 // ── main ──
@@ -396,7 +407,13 @@ async function main(): Promise<void> {
     }
   }
 
-  const rows = foldRoundToLedgerRows(spec, results);
+  // Only a real graded run is measured evidence: a fixture stands in for pipeline shake-out
+  // and is never counted (README promise); a blocked or errored run was not measured. The
+  // ledger rows — the "append these" section AND the durable append — are folded from the
+  // measured runs alone, and only for scenarios that had one, so a fixture or a failed
+  // provisioning can never establish a false baseline.
+  const rows = measuredLedgerRows(spec, results);
+
   const report = renderRoundReport(spec, results, rows, {
     specPath: relToRepo(cli.specPath),
     mode: cli.mode,
@@ -414,16 +431,16 @@ async function main(): Promise<void> {
     info(`wrote ${relToRepo(outPath)}`);
   }
 
-  // Ledger append is opt-in (--emit-ledger) and only for a round that actually graded runs:
-  // a plan or an all-blocked round has nothing measured to checkpoint. The append is the
-  // only durable write, and it appends rows — it never rewrites history (Art. 9, append-only).
+  // Ledger append is opt-in (--emit-ledger) and only carries measured rows. The append is the
+  // only durable write, and it appends — it never rewrites history (Art. 9, append-only).
   if (cli.emitLedger) {
-    const graded = results.some((r) => r.status === 'graded');
-    if (!graded) {
-      info('--emit-ledger given but no run graded — nothing appended (plan/blocked round)');
+    const excludedFixtures = results.filter((r) => r.status === 'graded' && r.reportIsFixture).length;
+    if (rows.length === 0) {
+      info(`--emit-ledger given but no measured run to checkpoint — nothing appended${excludedFixtures > 0 ? ` (${excludedFixtures} fixture-backed run(s) excluded)` : ' (plan/blocked round)'}`);
     } else {
       appendLedger(cli.ledgerPath, rows);
-      info(`appended ${rows.length} ledger row(s) to ${relToRepo(cli.ledgerPath)}`);
+      if (excludedFixtures > 0) info(`excluded ${excludedFixtures} fixture-backed run(s) from the ledger`);
+      info(`appended ${rows.length} measured ledger row(s) to ${relToRepo(cli.ledgerPath)}`);
     }
   }
 }
