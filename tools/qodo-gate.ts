@@ -212,6 +212,11 @@ async function main(argv: string[]): Promise<number> {
   const inlineRaw = ghApiList<RawInlineComment>(`repos/${args.repo}/pulls/${args.pr}/comments`);
   const inline: InlineFinding[] = parseInlineFindings(inlineRaw.filter((c) => isQodoBot(c.user?.login)));
   const summary = parseSummary(summaryComment.body);
+  // Defense in depth: a comment accepted as complete must yield a parseable count. If the
+  // parser and the completeness check ever diverge, fail inconclusive — never to clean.
+  if (summary.bugCount === null) {
+    fail('accepted a Qodo verdict with no parseable bug count — inconclusive, surface to human');
+  }
   const openHigh = openGatingFindings(inline, summary);
 
   // Round = this gate's own trigger markers on the PR, not every /agentic_review mention.

@@ -201,6 +201,29 @@ test('isQodoVerdictComment requires the exact bot, the title, and an actual bug 
   assert.equal(isQodoVerdictComment('qodofake', verdict), false);
 });
 
+// Qodo #26: the completeness check and parseSummary must share ONE bug-count contract — a
+// body accepted as complete but unparseable would flow to a false clean with bugCount:null.
+test('isQodoVerdictComment does not accept a body parseSummary cannot count', () => {
+  // Emoji-less "Bugs (1)": if accepted here, parseSummary would return bugCount:null.
+  const noEmoji = 'Code Review by Qodo\n\nBugs (1)\n  1.  X';
+  assert.equal(isQodoVerdictComment(QODO_BOT_LOGIN, noEmoji), false);
+  assert.equal(parseSummary(noEmoji).bugCount, null); // the divergence this guards against
+});
+
+test('every body accepted as a verdict yields a non-null parsed bug count', () => {
+  const bodies = [
+    'Code Review by Qodo\n\n🐞 Bugs (0)  📘 Rule violations (0)',
+    'Code Review by Qodo\n\n🐞 Bugs (3)\n  1.  A Action required',
+    'Code Review by Qodo\n\nBugs (1)', // emoji-less — must be rejected, not mis-accepted
+    'Code Review by Qodo\n\n🔄 Reviewing…',
+  ];
+  for (const body of bodies) {
+    if (isQodoVerdictComment(QODO_BOT_LOGIN, body)) {
+      assert.notEqual(parseSummary(body).bugCount, null, `accepted but unparseable: ${body}`);
+    }
+  }
+});
+
 // Qodo #23-4: a resolved item must not hide a distinct open High with a colliding title.
 test('openGatingFindings keeps colliding titles open (ambiguous match is never suppressed)', () => {
   // Two DISTINCT inline High findings normalize to the same key; the summary resolves one.
