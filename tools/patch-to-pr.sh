@@ -171,7 +171,14 @@ if [ "$PUSH" = "--push" ]; then
         # tool's relative path; the subshell keeps this helper's cwd unchanged. `if !`
         # captures a non-zero exit (High findings remain, or inconclusive) without
         # letting `set -e` abort — the PR must stand regardless of the verdict.
-        if ! ( cd "$REPO_ROOT" && npm run qodo-gate -- --pr="$PR_NUMBER" ); then
+        #
+        # Hand the gate the SAME resolved token these gh calls used, as an env var on the
+        # child (the `ps`-safe form the rest of this script uses, never a CLI arg). TOKEN
+        # is a non-exported shell var, so without this the gate's own `gh` calls would run
+        # unauthenticated whenever the token came from the Keychain fallback (no ambient
+        # GH_TOKEN) and stall at its first `gh pr view`. The gate reaches TrueForge over a
+        # separate channel; this only auths its gh side.
+        if ! ( cd "$REPO_ROOT" && GH_TOKEN="$TOKEN" npm run qodo-gate -- --pr="$PR_NUMBER" ); then
           echo "⚠ qodo-gate exited non-zero (High findings remain or inconclusive) — PR #$PR_NUMBER stands; surface to human." >&2
         fi
         ;;
