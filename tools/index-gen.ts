@@ -33,7 +33,7 @@ import {
   type StoreId,
   type IndexRecord,
 } from './index-contract.ts';
-import { layerEntryFiles } from './store-discovery.ts';
+import { layerEntryFiles, admittedById } from './store-discovery.ts';
 
 // Admitted-entry paths for a store, repo-relative, across every corpus root the layer contract
 // governs: the root scaffold `corpus/<store>/` plus each incident-tenant entry dir
@@ -53,6 +53,11 @@ export function discoverEntryFiles(root: string, store: StoreId): string[] {
   } catch (e) {
     if (errCode(e) === 'ENOENT') throw new Error(`store directory not found: ${scaffold}`);
     throw new Error(`cannot read store directory ${scaffold}: ${detail(e)}`);
+  }
+  // Cross-root id uniqueness: an ambiguous record set (the same id under two roots) would render
+  // two identical index rows, so refuse to generate over it rather than emit the ambiguity.
+  for (const [id, paths] of admittedById(root, store)) {
+    if (paths.length > 1) throw new Error(`duplicate id ${id} across corpus roots: ${paths.join(', ')}`);
   }
   return layerEntryFiles(root, store).filter((path) => isEntryFile(store, basename(path)));
 }

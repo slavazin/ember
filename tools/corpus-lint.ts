@@ -28,7 +28,7 @@ import {
   type IndexRecord,
   type StoreId,
 } from './index-contract.ts';
-import { layerEntryDirs, layerEntryFiles, isDir } from './store-discovery.ts';
+import { layerEntryFiles, admittedById, isDir } from './store-discovery.ts';
 
 // ── Named constants (the ones a reviewer or a later session will want to change) ──
 
@@ -515,42 +515,59 @@ function constitutionCap(ctx: Ctx): RuleResult {
   return ok();
 }
 
-// A frozen ledger store and ITS OWN immutability contract: which files are admitted (and so
-// byte-frozen) and which frontmatter keys may still flip after admission. Each store keys off
-// its own contract — the incident case bar is never forced onto the build ADR store and the
-// reverse (decision 4 / BS-0012 lifecycle-overreach): the build ADR flips status/superseded-by/
-// converged-into, the incident belief flips a human verdict, and neither inherits the other's.
-interface FrozenStore {
-  dir: string; // repo-relative store directory
-  isAdmitted: (filename: string) => boolean;
-  mutableKeys: readonly string[];
+// The immutability contract for a base-commit path, resolved by CONVENTION — never by reading
+// the working tree — so an entry whose store directory is DELETED in this change is still
+// classified and its removal caught (a working-tree-derived scope would let a deletion shrink the
+// gate's own coverage). Returns the frontmatter keys that may flip after admission, or undefined
+// when the path is not a frozen ledger entry. Each store keys off its OWN contract — the incident
+// case bar is never forced onto the build ADR store and the reverse (decision 4 / BS-0012): the
+// build ADR flips status/superseded-by/converged-into, the incident belief flips a human verdict.
+function frozenContractForPath(path: string): readonly string[] | undefined {
+  const name = basename(path);
+  // tenant-build's ADR store, bound to its exact tree (BS-0019): ADR-nnnn (exact four digits,
+  // never widened — loose-acceptance). This byte-immutability gate is what `adr check` (shape
+  // only) does not itself run.
+  if (path.startsWith('tenant-build/corpus/decisions/') && /^ADR-\d{4}\.md$/.test(name)) {
+    return ['status', 'superseded-by', 'converged-into'];
+  }
+  // Layer ledgers (decisions, beliefs) under any corpus root — the root scaffold or an
+  // incident-tenant instance that inherits the layer D-/B- contract.
+  const m = /^(?:corpus|tenant-[^/]+\/corpus)\/(decisions|beliefs)\/[^/]+$/.exec(path);
+  if (m && m[1] !== undefined) {
+    const store = m[1] as StoreId;
+    if (!isEntryFile(store, name)) return undefined;
+    return store === 'beliefs' ? ['status', 'superseded-by', 'verdict'] : ['status', 'superseded-by'];
+  }
+  return undefined;
 }
 
-// The frozen stores across every corpus root, each carrying its own contract. Layer ledgers
-// (decisions, beliefs) use the D-/B- shape, inherited by an incident-tenant store that ships no
-// SCHEMA of its own; tenant-build's self-describing ADR store declares the ADR shape and is
-// bound to its exact tree (BS-0019 — the exemption/contract binds to the store, not a marker).
-function frozenStores(root: string): FrozenStore[] {
-  const out: FrozenStore[] = [];
-  const layer: Record<string, readonly string[]> = {
-    decisions: ['status', 'superseded-by'],
-    beliefs: ['status', 'superseded-by', 'verdict'],
-  };
-  for (const store of FROZEN_STORES) {
-    const mutable = layer[store] ?? [];
-    for (const dir of layerEntryDirs(root, store)) {
-      out.push({ dir, isAdmitted: (name) => isEntryFile(store as StoreId, name), mutableKeys: mutable });
-    }
+// The git pathspec for the frozen check, STABLE across this change: corpus (the layer) always,
+// plus every tenant corpus tree present in the working tree OR the base commit. Deriving it from
+// the base too (not the working tree alone) is what keeps a deletion from removing its own store
+// from scrutiny — classification by convention then filters each returned path to frozen entries.
+function frozenPathspec(root: string, base: string): string[] {
+  const roots = new Set<string>(['corpus']);
+  let names: string[] = [];
+  try {
+    names = readdirSync(root);
+  } catch {
+    /* not readable — the corpus scaffold below still covers the layer */
   }
-  // tenant-build's ADR store: admitted = ADR-nnnn (exact four digits, never widened —
-  // loose-acceptance), and status/superseded-by/converged-into are the only fields adr-lib
-  // flips after admission. Its body/other frontmatter is frozen the same way, adding the
-  // byte-immutability gate that `adr check` (shape only) does not itself run.
-  const adrDir = 'tenant-build/corpus/decisions';
-  if (isDir(join(root, adrDir))) {
-    out.push({ dir: adrDir, isAdmitted: (name) => /^ADR-\d{4}\.md$/.test(name), mutableKeys: ['status', 'superseded-by', 'converged-into'] });
+  for (const name of names) if (name.startsWith('tenant-') && isDir(join(root, name, 'corpus'))) roots.add(`${name}/corpus`);
+  for (const name of gitTopLevelNames(root, base)) if (name.startsWith('tenant-')) roots.add(`${name}/corpus`);
+  const dirs: string[] = [];
+  for (const r of [...roots].sort()) for (const store of FROZEN_STORES) dirs.push(`${r}/${store}`);
+  return dirs;
+}
+
+// Top-level names in a commit's tree — used to find tenant trees that exist in the base but were
+// deleted from the working tree. Empty on any git error (the caller degrades to working-tree scope).
+function gitTopLevelNames(root: string, commit: string): string[] {
+  try {
+    return git(root, ['ls-tree', '--name-only', commit]).split('\n').filter((l) => l.length > 0);
+  } catch {
+    return [];
   }
-  return out;
 }
 
 // R4 — frozen-path immutability. A ledger entry admitted before this branch is byte-frozen
@@ -572,9 +589,7 @@ function frozenPath(ctx: Ctx): RuleResult {
     ]);
   }
   const findings: Finding[] = [];
-  const stores = frozenStores(ctx.root);
-  const paths = stores.map((s) => s.dir);
-  const storeFor = (path: string): FrozenStore | undefined => stores.find((s) => path.startsWith(`${s.dir}/`));
+  const paths = frozenPathspec(ctx.root, base);
 
   // BS-0023 (self-referential-baseline): frozenPath compares the base commit against the
   // WORKING TREE. When the base resolves to HEAD, that catches uncommitted edits (the normal
@@ -597,14 +612,9 @@ function frozenPath(ctx: Ctx): RuleResult {
       },
     ]);
   }
-  const baseEntries = lsTreeFiles(ctx.root, base, paths).filter((p) => {
-    const store = storeFor(p);
-    return store !== undefined && store.isAdmitted(basename(p));
-  });
-
-  for (const path of baseEntries) {
-    const store = storeFor(path);
-    if (store === undefined) continue;
+  for (const path of lsTreeFiles(ctx.root, base, paths)) {
+    const mutableKeys = frozenContractForPath(path);
+    if (mutableKeys === undefined) continue; // not a frozen ledger entry
     const baseText = gitShow(ctx.root, base, path);
     if (baseText === undefined) continue;
     if (!existsSync(join(ctx.root, path))) {
@@ -612,7 +622,7 @@ function frozenPath(ctx: Ctx): RuleResult {
       continue;
     }
     const headText = read(ctx.root, path);
-    const diff = frozenDelta(store.mutableKeys, baseText, headText);
+    const diff = frozenDelta(mutableKeys, baseText, headText);
     if (diff) findings.push({ rule: 'frozen-path', file: path, severity: 'error', message: diff });
   }
   return ok(findings);
@@ -632,9 +642,11 @@ function frozenDelta(mutable: readonly string[], baseText: string, headText: str
 
 // Drop each mutable top-level key AND its full value from the frontmatter, so what remains is
 // the byte-frozen part. A mutable value may span lines (a YAML list like `converged-into` on the
-// build ADR store), so the key's indented continuation lines are dropped with it — a line-only
-// filter would freeze the list items and reject a sanctioned convergence. Column-0 keys start a
-// block; indented and (within a dropped block) blank lines continue it.
+// build ADR store), so the key's continuation lines are dropped with it — a line-only filter
+// would freeze the list items and reject a sanctioned convergence. A continuation is an indented
+// line, a blank line, OR a block-sequence item at column zero (`- ADR-0009`): js-yaml accepts a
+// sequence directly under a mapping key with no extra indentation, so that form must be
+// recognized too (parse-fidelity — an indentationless list is still the mutable value).
 function stripMutableKeys(fmRaw: string, mutable: readonly string[]): string {
   const kept: string[] = [];
   let inMutableBlock = false;
@@ -645,7 +657,8 @@ function stripMutableKeys(fmRaw: string, mutable: readonly string[]): string {
       if (!inMutableBlock) kept.push(line);
       continue;
     }
-    if (inMutableBlock && (/^\s/.test(line) || line.trim() === '')) continue; // continuation of the dropped value
+    // continuation of the dropped value: indented, blank, or a column-0 sequence item
+    if (inMutableBlock && (/^\s/.test(line) || /^-(\s|$)/.test(line) || line.trim() === '')) continue;
     inMutableBlock = false;
     kept.push(line);
   }
@@ -1008,6 +1021,28 @@ function refsResolve(ctx: Ctx): RuleResult {
   return ok(findings);
 }
 
+// R13 — cross-root id uniqueness. Multi-root discovery admits the canonical filename from every
+// corpus root, so an id minted under two roots resolves to two entries — an ambiguous record set
+// the index would render as two identical rows and every gate reading it would accept. A canonical
+// id must resolve to exactly one entry path; the finding names every path that claims the id.
+function uniqueId(ctx: Ctx): RuleResult {
+  const findings: Finding[] = [];
+  for (const store of ENTRY_STORES) {
+    for (const [id, paths] of admittedById(ctx.root, store)) {
+      if (paths.length < 2) continue;
+      for (const p of paths) {
+        findings.push({
+          rule: 'unique-id',
+          file: p,
+          severity: 'error',
+          message: `id '${id}' is claimed by ${paths.length} entries across corpus roots (${paths.join(', ')}) — an id must resolve to one entry`,
+        });
+      }
+    }
+  }
+  return ok(findings);
+}
+
 // ── shared collectors ──
 
 function collect(findings: Finding[], rule: string, file: string, text: string, re: RegExp, message: string, severity: Severity): void {
@@ -1036,6 +1071,7 @@ export const RULES: Rule[] = [
   { name: 'escapes', run: escapesValid, residue: ['checks escape syntax other(<what>), not that the escape was the right call over a named term.'] },
   { name: 'refs-resolve', run: refsResolve, residue: ['over layer prose (corpus/skills/roles), both tenant trees, and tools/*.md protocols, checks repo-root-absolute markdown links and bare code-span layer paths resolve (and reject `..`); does not check the target content is right, nor catch a path named in prose without link or code-span syntax. Fenced code and `…-nnnn.md` placeholders are exempt.'] },
   { name: 'check-seam', run: checkSeam, residue: ['greps a DERIVED tenant-term set; cannot catch tenant knowledge expressed without a registered term (paraphrase), and coverage grows only as the vocabulary does. A no-op until the tenant grows terms/scenarios. Excludes *.test.ts (fixtures) and the tenant-build tree (its subject is the layer — tenant→layer references are allowed).'] },
+  { name: 'unique-id', run: uniqueId, residue: ['checks that each admitted id resolves to one entry path across all corpus roots; does not check the id was minted correctly or that its content is right. Keyed on the admitted-filename shape, so a draft (no minted id) is out of scope.'] },
 ];
 
 const GLOBAL_RESIDUE = [

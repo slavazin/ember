@@ -150,6 +150,18 @@ test('discovery spans corpus roots: an incident-tenant entry is indexed alongsid
   });
 });
 
+test('a duplicate id across roots is a named error, not an ambiguous index (cross-root uniqueness)', () => {
+  withRepo((root) => {
+    writeEntry(root, 'decisions', 'D-0007.md', D0007); // root scaffold
+    const tenantDir = join(root, 'tenant-incident', 'corpus', 'decisions');
+    mkdirSync(tenantDir, { recursive: true });
+    writeFileSync(join(tenantDir, 'D-0007.md'), D0007); // same id under the tenant root
+    const outcome = processStore(root, 'decisions', false);
+    assert.equal(outcome.kind, 'error');
+    assert.match(outcome.kind === 'error' ? outcome.detail : '', /duplicate id D-0007 across corpus roots/);
+  });
+});
+
 test('an empty store plans an adjacent-marker region and reads as already current', () => {
   withRepo((root) => {
     const plan = planStore(root, 'rules');

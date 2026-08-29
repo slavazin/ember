@@ -529,6 +529,65 @@ test('check-seam: tenant-build is exempt — its files are not layer, and it see
   );
 });
 
+// Qodo #11 (cross-root ambiguity): multi-root discovery must enforce id uniqueness across the
+// whole discovered set, not per directory — the same id under two roots is an ambiguous record.
+test('unique-id: the same canonical id under two roots is flagged, naming every path', () => {
+  withCorpus(
+    {
+      'corpus/decisions/D-0001.md': DECISION.replace('id: D-0007', 'id: D-0001'),
+      'tenant-incident/corpus/decisions/D-0001.md': DECISION.replace('id: D-0007', 'id: D-0001'),
+    },
+    (root) => {
+      const errs = errors(run(root, 'unique-id'));
+      assert.equal(errs.length, 2, JSON.stringify(errs));
+      assert.ok(errs.every((f) => /claimed by 2 entries across corpus roots/.test(f.message)));
+    },
+  );
+});
+
+test('unique-id: distinct ids across roots pass', () => {
+  withCorpus(
+    {
+      'corpus/decisions/D-0001.md': DECISION.replace('id: D-0007', 'id: D-0001'),
+      'tenant-incident/corpus/decisions/D-0002.md': DECISION.replace('id: D-0007', 'id: D-0002'),
+    },
+    (root) => assert.equal(errors(run(root, 'unique-id')).length, 0),
+  );
+});
+
+// Qodo #11 (deleted stores evade freeze): the frozen pathspec is derived from base∪working-tree,
+// so deleting a store directory cannot remove it from the base comparison. Previously the pathspec
+// came from working-tree discovery alone, so a deletion shrank the gate's own scope.
+test('frozen-path: deleting an entire ledger store directory is still caught', () => {
+  withGitRepo(
+    { 'corpus/decisions/D-0001.md': DECISION },
+    (root) => rmSync(join(root, 'corpus/decisions'), { recursive: true, force: true }),
+    (root) => assert.ok(errors(run(root, 'frozen-path')).some((f) => f.file === 'corpus/decisions/D-0001.md' && /deleted or renamed/.test(f.message))),
+  );
+});
+
+test('frozen-path: deleting the build ADR store tree is caught (base-derived pathspec)', () => {
+  withGitRepo(
+    { ...ADR_STORE_STANDING, 'tenant-build/corpus/decisions/ADR-0001.md': ADR },
+    (root) => rmSync(join(root, 'tenant-build'), { recursive: true, force: true }),
+    (root) => assert.ok(errors(run(root, 'frozen-path')).some((f) => f.file === 'tenant-build/corpus/decisions/ADR-0001.md' && /deleted or renamed/.test(f.message))),
+  );
+});
+
+test('frozen-path: an ADR convergence with an indentationless converged-into list is sanctioned', () => {
+  // js-yaml accepts a sequence directly under a mapping key with no extra indentation; the
+  // mutable-key stripper must recognize that form too, or a valid convergence reads as a frozen edit.
+  withGitRepo(
+    ADR_BASE,
+    (root) =>
+      writeFileSync(
+        join(root, 'tenant-build/corpus/decisions/ADR-0001.md'),
+        ADR.replace('status: accepted', 'status: converged\nconverged-into:\n- ADR-0009'),
+      ),
+    (root) => assert.equal(errors(run(root, 'frozen-path')).length, 0),
+  );
+});
+
 // ── R5 no-duty-language ──
 
 test('no-duty-language: fires-when in a decision fails; a clean decision passes', () => {

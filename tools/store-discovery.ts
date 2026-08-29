@@ -18,6 +18,7 @@
 
 import { readdirSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { isEntryFile, type StoreId } from './index-contract.ts';
 
 export function isDir(path: string): boolean {
   try {
@@ -79,4 +80,22 @@ export function layerEntryFiles(root: string, store: string): string[] {
     }
   }
   return out;
+}
+
+// Admitted entries for a store grouped by their canonical id, across every layer-contract root.
+// Uniqueness within one directory is not enough once discovery spans roots: the same id minted
+// under two roots (corpus/decisions/D-0001 and tenant-incident/corpus/decisions/D-0001) would
+// render two indistinguishable index rows, and every gate reading the same record set would
+// accept the ambiguity. An id mapping to more than one path is that collision.
+export function admittedById(root: string, store: StoreId): Map<string, string[]> {
+  const byId = new Map<string, string[]>();
+  for (const path of layerEntryFiles(root, store)) {
+    const name = path.slice(path.lastIndexOf('/') + 1);
+    if (!isEntryFile(store, name)) continue;
+    const id = name.slice(0, -'.md'.length);
+    const paths = byId.get(id);
+    if (paths) paths.push(path);
+    else byId.set(id, [path]);
+  }
+  return byId;
 }
