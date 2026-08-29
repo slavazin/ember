@@ -101,6 +101,20 @@ above", "the previous rule", "the new schema").
 adjudication event. An undated sentence *asserts an until-falsified truth* —
 that is its meaning under L2, not an omission to fix.
 
+**Do:** a quantity or set a directive derives from its case is named by that
+case, never frozen as a figure or a sample — "the symptom window", not "the
+last day"; "reduce the error to its stable signature, removing {ids,
+timestamps, hosts, paths, SQL, credentials, payload values}", not "strip ids,
+timestamps, hostnames". The value then tracks the input, and the set stays
+exhaustive as the input grows.
+
+**Don't:** don't dissolve a genuinely fixed quantity into a false derivation.
+A spec-pinned width, a protocol constant, a bounded enum is stated as the
+fixed value it is, dated if it can rot — the law binds a quantity the case
+determines, not every number a directive names. A pinned figure and an
+enumerated sample are one failure: an instance standing in for the rule, wrong
+on exactly the case the author did not picture.
+
 ## Lexicon
 
 A closed vocabulary. Use these words for these concepts, no synonyms for
@@ -216,7 +230,13 @@ judgment — the floor, honestly disclosed:
 - Do/Don't pairing: every `**Do:**` in a SCHEMA has a sibling `**Don't:**`
 - every store README declares register or ledger
 - no `fires-when` inside a decision body (duty language belongs to rules)
+- derived-quantity (warn): a recency or size literal ("the last day", "24h")
+  in governed prose — advisory, the author's cue to derive the bound from the
+  case, or state it as a fixed fact when the case does not touch it
 
 Residue: none of these checks that a sentence is true, that a Do/Don't pair
-is non-vacuous, or that a declared falsifier is the right one. Those remain
-review judgments.
+is non-vacuous, or that a declared falsifier is the right one. The
+derived-quantity warn flags a literal's shape, not whether it should derive
+from the case, and does not reach the open-sample form of the same failure —
+whether an exhaustive removal set is complete stays review judgment. Those
+remain review judgments.
