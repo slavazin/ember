@@ -1,0 +1,57 @@
+# round-1 — first warm round (MULTI-RUN-STRATEGY.md §5, "R1 — corpus/v1").
+#
+# Pre-registration for the headline delta. R1 runs against corpus/v1 — the version the slow
+# loop advanced to after adjudicating R0's candidates (the pool rule: "on a gateway-timeout
+# storm with a healthy datastore, read pool saturation before datastore latency"). Every
+# expect below is a claim about that promoted rule:
+#
+#   - the positive-probe must read `applied` and cut steps versus the R0 pool baseline;
+#   - the control must read `considered-not-applicable` — the rule consulted and set aside,
+#     never `applied` (an `applied` here is a false-fire, and a single false-fire invalidates
+#     the promotion, §6);
+#   - the frontier novelty must read `fired-off-map` — a clean gap, never a forced apply.
+#
+# This spec exercises the full role/disposition vocabulary. The bad-deploy and poison-message
+# surfaces exist; the pool-c positive-probe and the upstream-b control are unbuilt, so the
+# runner reports them blocked until built (§7 artifact 1). The pre-registration is the point —
+# it is what the ledger is checked against.
+
+round: 1
+corpus_tag: corpus/v1
+description: >
+  First warm round. The pool rule promoted from R0 is interrogated by a positive probe (a
+  fresh pool surface where it should fire and cut steps) and a control (an upstream outage
+  that presents as saturation but is really a dependency — the rule must be set aside). A
+  second bad-deploy surface supplies recurrence for the change class; one frontier novelty
+  keeps fresh input flowing to the slow loop.
+
+scenarios:
+  # Delta / positive-probe: a fresh pool surface. The promoted rule should fire the pool check
+  # early → fewer steps than the R0 baseline. Replicated x3 so the delta ships with an interval.
+  - class: pool-exhaustion
+    surface: c
+    role: positive-probe
+    runs: 3
+    expect: applied
+
+  # Control: an upstream outage whose saturation decoy invites the pool rule. The rule must be
+  # consulted and set aside — proving the delta is transfer, not a rule that over-fires.
+  - class: upstream
+    surface: b
+    role: control
+    runs: 1
+    expect: considered-not-applicable
+
+  # Recurrence supply: the second bad-deploy surface (change shape). Now promotable next loop.
+  - class: bad-deploy
+    surface: b
+    role: anchor
+    runs: 1
+    expect: fired-off-map
+
+  # Frontier: exactly one novelty per round. No entry helps → a clean off-map fire.
+  - class: poison-message
+    surface: b
+    role: novelty
+    runs: 1
+    expect: fired-off-map
