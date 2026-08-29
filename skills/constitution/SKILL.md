@@ -38,7 +38,7 @@ close-out. Procedure: the `session` skill (boot) and the `close` skill (close-ou
 
 ## Article 5 — Probes run in the sandbox only.
 Every hypothesis test runs in a sandbox; nothing speculative touches a live
-surface.
+surface. Procedure: the `investigate` skill.
 
 ## Article 6 — Layer and tenant are strictly separated.
 The reusable layer carries zero tenant knowledge; a tenant's entries live in its
