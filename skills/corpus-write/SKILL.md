@@ -26,13 +26,21 @@ narration, and its warrant cannot bite it.
 
 ## Drafting
 
-Spawn a **proposer** subagent, pasting [/roles/proposer.md](/roles/proposer.md)
-verbatim. The proposer drafts the entry against the store SCHEMA and returns it;
-it never commits.
+The filing agent drafts the entry itself. It already holds the observation and
+its anchors, so handing them to a separate drafting subagent would re-freeze the
+same context without adding a perspective — a subagent earns its dispatch by
+holding a view the root does not (the examiner's, the recon shape's), and the
+drafter's view is the root's own. Fill the five slots above against the target
+store's `SCHEMA.md`, and:
 
-**Do:** paste the role template verbatim.
-**Don't:** don't paraphrase it — a paraphrased role drifts from the frozen
-template each dispatch is meant to reproduce.
+- Raise the abstraction to the constraint the evidence supports — state the
+  judgment decoupled from the objects it was learned on, and no further than the
+  anchors can still falsify.
+- Leave the id empty; admission mints it at merge.
+
+**Do:** raise the abstraction as far as the anchors can still bite.
+**Don't:** don't abstract past the evidence — a claim the anchors cannot falsify
+is a slogan, not an entry.
 
 ## Examination
 

@@ -32,9 +32,11 @@ auditable in git once the loop runs (see [#honest-limits](#honest-limits)).
 
 The design exercises the five judged harness primitives *structurally* — skills
 (the read side is a three-stage progressive disclosure over `SKILL.md` packs),
-subagents (proposer / examiner / recon are distinct roles, none reviewing its
-own output), approvals (the push is gated; the PR merge is the durable
-adjudication), sandboxed execution (every probe is designed to run in the
+subagents (examiner and recon are dispatched for a perspective the root does not
+already hold — an adversary that did not write the draft, an investigator held to
+one shape — with none reviewing its own output), approvals (the push is gated;
+the PR merge is the durable adjudication), sandboxed execution (every probe is
+designed to run in the
 sandbox, nothing speculative touching a live surface), and persistent sessions
 (a fresh session boots from the corpus and may not end without its close-out).
 The construct-by-construct mapping and its disclosed fidelity losses are the

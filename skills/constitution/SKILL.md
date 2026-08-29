@@ -26,8 +26,9 @@ An agent files candidates on a branch; a human's merge is the only write that
 admits an entry. Procedure: the `corpus-write` skill.
 
 ## Article 3 — Role separation is subagent separation.
-Proposing, examining, and investigating are distinct subagents; no subagent
-reviews its own output; the human is the only committing party.
+Roles that must be independent are distinct subagents; no subagent reviews its
+own output, so review is external to the party reviewed; the human is the only
+committing party.
 
 ## Article 4 — A session boots from the corpus and closes into it.
 A session boots from this constitution and the shape-matched stores — its

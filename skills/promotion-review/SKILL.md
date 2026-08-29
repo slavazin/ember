@@ -62,6 +62,6 @@ mis-slotted entry latches on the wrong hook and never fires when it is needed.
 
 ## Drafting and examination
 
-Promotion drafts go through the `corpus-write` skill: a proposer drafts, an
-examiner attacks, the pull request carries both, and the human's merge fills the
-verdict and admits the entry.
+Promotion drafts go through the `corpus-write` skill: the drafting agent fills the
+entry and an examiner attacks it, the pull request carries both, and the human's
+merge fills the verdict and admits the entry.

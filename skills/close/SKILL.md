@@ -84,8 +84,8 @@ as it presented, not a single service or symptom.
 A **candidate** is an observation — surfaced by a lens or by a fired-off-map
 disposition — that proposes an addition or change to permanent knowledge: a rule, a
 belief, a case, or a vocabulary term. It takes the target store's own shape (the
-five-slot contract for the entry stores; the term block for `vocabulary/`); a
-proposer subagent drafts it through the `corpus-write` skill and files it as a draft
+five-slot contract for the entry stores; the term block for `vocabulary/`); the
+close-out drafts it in place through the `corpus-write` skill and files it as a draft
 on the session's branch, riding this pull request. Admission — the human merge —
 admits it, minting an id for the stores that carry one; a `vocabulary/` term is
 admitted as an id-less block, keyed by the term itself.
