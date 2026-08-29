@@ -9,6 +9,7 @@ import {
   flattenPages,
   isGatingSeverity,
   isQodoBot,
+  isQodoVerdictComment,
   normalizeTitle,
   openGatingFindings,
   parseInlineFindings,
@@ -186,6 +187,18 @@ test('isQodoBot authenticates the exact bot login only', () => {
   assert.equal(isQodoBot('qodofake'), false);
   assert.equal(isQodoBot('evil-qodo-impersonator'), false);
   assert.equal(isQodoBot(undefined), false);
+});
+
+// Qodo #23-followup: an in-progress re-review body (title, no bug count) must NOT read as a
+// verdict — else the poll accepts a placeholder and returns a false clean.
+test('isQodoVerdictComment requires the exact bot, the title, and an actual bug count', () => {
+  const verdict = 'Code Review by Qodo\n\n🐞 Bugs (0)  📘 Rule violations (0)\n  1.  X ✓ Resolved';
+  const inProgress = 'Code Review by Qodo\n\n🔄 Reviewing the latest changes…'; // title, no count
+  const notice = '[Code review](url) by qodo was updated up to the latest commit abc123';
+  assert.equal(isQodoVerdictComment(QODO_BOT_LOGIN, verdict), true);
+  assert.equal(isQodoVerdictComment(QODO_BOT_LOGIN, inProgress), false);
+  assert.equal(isQodoVerdictComment(QODO_BOT_LOGIN, notice), false);
+  assert.equal(isQodoVerdictComment('qodofake', verdict), false);
 });
 
 // Qodo #23-4: a resolved item must not hide a distinct open High with a colliding title.
