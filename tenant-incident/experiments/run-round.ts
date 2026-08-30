@@ -448,6 +448,17 @@ async function tfFetch(url: string, init?: RequestInit): Promise<Response> {
   }
 }
 
+// TrueForge v0.1.4 wraps every JSON response in a `{ data: … }` envelope (confirmed live: session
+// create, turn create, and turn GET all return `{data:{id,…,state}}`). Unwrap it once here so the
+// resource fields readId / interpretTurnState expect sit at the top level. A payload without a
+// `data` key (or a non-object) is returned unchanged.
+function unwrapEnvelope(parsed: unknown): unknown {
+  if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) && 'data' in (parsed as Record<string, unknown>)) {
+    return (parsed as Record<string, unknown>).data;
+  }
+  return parsed;
+}
+
 async function tfPostJson(base: string, path: string, body: unknown): Promise<unknown> {
   const res = await tfFetch(`${base}${path}`, {
     method: 'POST',
@@ -456,14 +467,14 @@ async function tfPostJson(base: string, path: string, body: unknown): Promise<un
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`POST ${path} → ${res.status} ${res.statusText}: ${text.slice(0, 300)}`);
-  return text === '' ? {} : JSON.parse(text);
+  return unwrapEnvelope(text === '' ? {} : JSON.parse(text));
 }
 
 async function tfGetJson(base: string, path: string): Promise<unknown> {
   const res = await tfFetch(`${base}${path}`);
   const text = await res.text();
   if (!res.ok) throw new Error(`GET ${path} → ${res.status} ${res.statusText}: ${text.slice(0, 300)}`);
-  return text === '' ? {} : JSON.parse(text);
+  return unwrapEnvelope(text === '' ? {} : JSON.parse(text));
 }
 
 async function tfGetText(base: string, path: string): Promise<string> {
