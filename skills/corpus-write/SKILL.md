@@ -17,8 +17,10 @@ searching the corpus tree for a file of this name.
 ## Corpus reachability (invariant)
 
 **The corpus is ensured reachable before any corpus read.** This procedure reads
-`/corpus/README.md` and the target store's `/corpus/…/SCHEMA.md`; each `/corpus/…`
-path resolves through a repo-root symlink the sandbox does not carry by default, and
+`/corpus/README.md` and the target store's `SCHEMA.md` — `/corpus/…/SCHEMA.md` for a
+layer store, `/tenant-incident/corpus/incidents/SCHEMA.md` for the incident case
+ledger; each such path resolves through a repo-root symlink the sandbox does not
+carry by default, and
 the sandbox is recycled after an idle interval, dropping a corpus provisioned once
 at boot while the harness re-clones only the skills. So reachability is an
 **invariant re-ensured before each corpus-touching read**, never a boot-once step:
@@ -85,12 +87,21 @@ store's `SCHEMA.md`, and:
   anchors can still falsify.
 - Set the id as the target store's `SCHEMA.md` directs. A store that mints its
   id at admission takes an empty id, and the merge mints it; a store that
-  reserves its id at draft — the build ADR store — carries the reserved id from
-  the draft, its filename equal to it.
+  reserves its id at draft — the incident case ledger
+  `tenant-incident/corpus/incidents/`, or the build ADR store — carries the
+  reserved id from the draft, its filename equal to it. Reserve a four-digit id
+  the store's occupied set does not already hold, read from the reachable corpus:
+  the ids are gap-tolerant, and the lowest free one is the convention.
 
 **Do:** raise the abstraction as far as the anchors can still bite.
 **Don't:** don't abstract past the evidence — a claim the anchors cannot falsify
 is a slogan, not an entry.
+
+**Do:** reserve a reserve-at-draft id from the store's occupied set, its filename
+equal to the id.
+**Don't:** don't leave a reserve-at-draft id blank for the merge to mint — the
+incident case ledger and the build ADR store carry the id from filing, and a blank
+breaks the filename-equals-id contract their validators check.
 
 ## Examination
 
@@ -164,6 +175,12 @@ deposit in the learning arc:
         --trailer 'Incident-Class: <class>' \
         --trailer 'Corpus-Store: <target store path>' \
         --trailer 'Deposited-By: incident-responder'
+
+`Corpus-Store` is the store the entry lands in: `tenant-incident/corpus/incidents/`
+for an incident case, or the layer store path for a rule, belief, or decision the
+case nominates. `Incident-Id` and `Incident-Class` are the incident coordinates the
+close hands in; for an incident case, `Incident-Id` is the entry's own reserved id,
+so the case entry, the deposit branch, and the close-out record key on one id.
 
 Emit the commit as a formatted patch so its author and trailers leave the sandbox
 intact, and let the harness retrieve that patch. One incident files a candidate

@@ -205,19 +205,55 @@ derived one.
 
 ## 3. File candidates
 
-A **candidate** is an observation — surfaced by a lens or by a fired-off-map
-disposition — that proposes an addition or change to permanent knowledge: a rule, a
-belief, a case, or a vocabulary term. It takes the target store's own shape (the
-five-slot contract for the entry stores; the term block for `vocabulary/`); the
-close-out drafts it in place through the `corpus-write` skill, handing it the
-incident's id and class so the signed deposit commit places the entry in the
-learning arc, and files it as a draft on the session's branch, riding this pull
-request. `corpus-write` is a skill loaded by name — the harness materializes it at
-`/opt/tf/skills/corpus-write/`, alongside the other loaded skills — not a helper
-file under `/corpus`; load the skill, and do not search the corpus tree for it. Admission — the human merge — admits it: a store that mints its id at
-admission gains it then, a store that reserves its id at draft has carried it
-since filing, and a `vocabulary/` term is admitted as an id-less block, keyed by
-the term itself.
+A **candidate** is a proposed addition to permanent knowledge, drafted in place
+through the `corpus-write` skill and filed as a draft on the session's branch,
+riding this pull request. An incident close's candidates fall into two kinds, filed
+into two stores that are not interchanged:
+
+- **The incident case** — the record of the occurrence the session diagnosed: its
+  symptom, the probe frozen before the fix, the root cause, and the learning the
+  class carries forward. It is an incident case entry in the tenant case ledger
+  `tenant-incident/corpus/incidents/`, built against that store's
+  [SCHEMA.md](/tenant-incident/corpus/incidents/SCHEMA.md) — a dated ledger entry,
+  frozen at admission, keyed by the `class` and `surface` the incident presented at.
+  This is the deposit the learning delta reads across incident N and incident N+k of
+  one class (Article 12). It is tenant knowledge and lands only in the tenant store.
+- **A constraint the case nominates** — a rule, belief, or decision the case argues
+  for is a separate candidate in its own layer store, citing the case as its anchor
+  (the entry's `related`, or the decision store's `recurrences`). The case holds the
+  evidence; the nominated entry holds the constraint; they are distinct entries wired
+  by the citation, so correcting one never forks the other.
+
+Each candidate takes its target store's own shape (the five-slot contract for the
+entry stores; the term block for `vocabulary/`). The close-out drafts it through
+`corpus-write`, handing it the incident's id and class and naming the target store,
+so the signed deposit commit places the entry in the learning arc and its
+`Corpus-Store` marker points at where the entry lands. The incident's id is the case
+id the close reserves — `INC-nnnn` — so the case entry, the deposit's `Incident-Id`,
+and the deposit branch all key on one id. `corpus-write` is a skill loaded by name —
+the harness materializes it at `/opt/tf/skills/corpus-write/`, alongside the other
+loaded skills — not a helper file under `/corpus`; load the skill, and do not search
+the corpus tree for it. Admission — the human merge — admits it: a store that mints
+its id at admission gains it then, a store that reserves its id at draft (the
+incident case ledger, the build ADR store) has carried it since filing, and a
+`vocabulary/` term is admitted as an id-less block, keyed by the term itself.
+
+The signed corpus deposit is a distinct write from any operational service fix the
+remediation lands (the `implement` skill, ADR-0018): a service fix carries no
+`Incident-*` signature, so it stays out of the learning delta the case deposit is
+read for.
+
+**Do:** deposit the incident's learning as a case in
+`tenant-incident/corpus/incidents/`, built against that store's SCHEMA.
+**Don't:** don't deposit it as a decision in the layer decision store — an incident
+case is tenant knowledge and a dated occurrence, not a standing layer constraint,
+and incident knowledge in the layer breaches the layer/tenant separation (Article 7).
+
+**Do:** file a constraint the case nominates as its own candidate in its own store,
+citing the case as the anchor.
+**Don't:** don't fold a nominated constraint into the case or restate the case's
+evidence inside the constraint — the two are wired by citation, and duplication
+forks when one is corrected.
 
 **Do:** give every candidate the target store's five-slot shape through
 `corpus-write` — the payload and its latch fan, anchored to git-reachable evidence.
@@ -233,6 +269,12 @@ cannot be grouped and ordered by class is invisible to the learning-delta read-o
 it.
 **Don't:** don't write to a permanent store directly — the merge is the only
 admitting write.
+
+**Do:** keep the signed corpus deposit and the operational service fix distinct
+writes.
+**Don't:** don't sign a service fix with the `Incident-*` deposit markers — an
+unsigned service fix stays out of the learning delta (ADR-0018), and a signed one
+pollutes the class read-out with a change that carries no learning.
 
 ## 4. Walk the closing latches
 
