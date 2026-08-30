@@ -365,6 +365,34 @@ export function downloadSandboxFilePath(sessionId: string, turnId: string, absPa
   return `/api/v1/sessions/${sessionId}/turns/${turnId}/download-sandbox-file?path=${encodeURIComponent(absPath)}`;
 }
 
+export interface RunManifest {
+  label: string;
+  scenario: string;
+  run_index: number;
+  branch: string; // run/{round}/{scenario}/{n} — this run's OWN deposit-target branch (§3)
+  corpus_tag: string;
+  corpus_commit: string | null;
+}
+
+/**
+ * The per-run provenance manifest, written beside the run's artifacts. It durably ASSOCIATES a
+ * run with its own branch and the frozen corpus it booted (§3) — the record the slow loop's
+ * deposit step reads to apply this run's patch to `branch`. Cross-run isolation itself is
+ * structural: every run is a distinct TrueForge session (no shared filesystem) with a unique,
+ * deterministically-derived branch and output directory, so two runs can never share a branch.
+ * The runner records the target; it never creates, pushes, or merges the branch (Art. 2).
+ */
+export function buildRunManifest(run: PlannedRun, corpusTag: string, corpusCommit: string | null): RunManifest {
+  return {
+    label: run.label,
+    scenario: run.scenarioName,
+    run_index: run.runIndex,
+    branch: run.branch,
+    corpus_tag: corpusTag,
+    corpus_commit: corpusCommit,
+  };
+}
+
 // A pause the harness knows how to resume. The verified required-action type is
 // `tool.approval_required`, resumed with `user.tool_approval`. The task's "tool.response_required"
 // names the same class of turn pause (the turn requires an action before it can continue); the

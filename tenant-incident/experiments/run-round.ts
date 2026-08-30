@@ -44,6 +44,7 @@ import {
   frozenCorpusRefBlockers,
   buildSessionRequest,
   buildTurnRequest,
+  buildRunManifest,
   downloadSandboxFilePath,
   interpretTurnState,
   buildApprovalResume,
@@ -351,6 +352,7 @@ interface HarnessConfig {
   model: string;
   agent: string;
   corpusRef: string; // the frozen corpus/v{k} tag this round boots (§3, P3)
+  corpusCommit: string | null; // the commit that tag resolves to, recorded in each run manifest
   approvalPolicy: ApprovalStatus;
 }
 
@@ -409,7 +411,7 @@ function harnessPreflight(cli: Cli, corpusTag: string, corpusCommit: string | nu
     for (const b of blockers) info(`  - ${b}`);
     return null;
   }
-  return { url, model, agent, corpusRef: corpusTag, approvalPolicy: rawPolicy as ApprovalStatus };
+  return { url, model, agent, corpusRef: corpusTag, corpusCommit, approvalPolicy: rawPolicy as ApprovalStatus };
 }
 
 // ── harness HTTP (only reached past a green preflight) ──
@@ -506,11 +508,18 @@ async function harnessRun(run: PlannedRun, deps: HarnessRunDeps): Promise<RunRes
     return nonMeasured(run, 'blocked', `no incident brief — add tenant-incident/scenarios/${run.scenarioName}/brief.md (the symptom only; the README states the cause and must not be sent). Scenario-authoring work, outside this runner.`);
   }
 
+  // Associate this run with its OWN branch and frozen corpus BEFORE any close/deposit: write a
+  // provenance manifest to the run's own output directory (§3). The directory and branch are
+  // derived uniquely per run, so concurrent runs can never share either.
+  const runOutDir = join(reportOutDir, run.scenarioName, String(run.runIndex));
+  mkdirSync(runOutDir, { recursive: true });
+  writeFileSync(join(runOutDir, 'run.json'), `${JSON.stringify(buildRunManifest(run, cfg.corpusRef, cfg.corpusCommit), null, 2)}\n`);
+
   try {
     const session = await tfPostJson(cfg.url, '/api/v1/sessions', buildSessionRequest(cfg.agent));
     const sid = readId(session, 'session');
     if (sid === null) return nonMeasured(run, 'error', 'session create returned no id');
-    info(`[${run.label}] session ${sid} (corpus ${cfg.corpusRef})`);
+    info(`[${run.label}] session ${sid} (corpus ${cfg.corpusRef}, branch ${run.branch})`);
 
     const firstTurn = await tfPostJson(cfg.url, `/api/v1/sessions/${sid}/turns`, buildTurnRequest(brief));
     let tid = readId(firstTurn, 'turn');
@@ -559,10 +568,7 @@ async function harnessRun(run: PlannedRun, deps: HarnessRunDeps): Promise<RunRes
       return nonMeasured(run, 'error', `harness run emitted no diagnosis report artifact (${artifacts.length} artifact(s) found${patchPath ? `, incl. patch ${patchPath}` : ''}) — nothing to grade`);
     }
 
-    // Persist both artifacts under a deterministic per-run directory so they survive the round.
-    const runOutDir = join(reportOutDir, run.scenarioName, String(run.runIndex));
-    mkdirSync(runOutDir, { recursive: true });
-
+    // Persist both artifacts under the run's own directory (created with the manifest above).
     const reportText = await tfGetText(cfg.url, downloadSandboxFilePath(sid, tid, sandboxReport));
     const localReport = join(runOutDir, 'diagnosis.md');
     writeFileSync(localReport, reportText);

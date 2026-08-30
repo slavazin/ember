@@ -20,6 +20,7 @@ import {
   frozenCorpusRefBlockers,
   buildSessionRequest,
   buildTurnRequest,
+  buildRunManifest,
   downloadSandboxFilePath,
   interpretTurnState,
   buildApprovalResume,
@@ -349,6 +350,19 @@ test('buildTurnRequest wraps the brief as a non-streaming user.message', () => {
     stream: false,
     input: [{ type: 'user.message', content: 'orders is 504ing' }],
   });
+});
+
+test('buildRunManifest records the run branch and frozen corpus for deposit provenance', () => {
+  const { spec } = parseRoundSpec(GOOD_SPEC);
+  const run = expandRuns(spec!)[2]!; // pool-exhaustion-a#3
+  const m = buildRunManifest(run, 'corpus/v0', 'abc123');
+  assert.equal(m.label, 'pool-exhaustion-a#3');
+  assert.equal(m.branch, 'run/0/pool-exhaustion-a/3');
+  assert.equal(m.corpus_tag, 'corpus/v0');
+  assert.equal(m.corpus_commit, 'abc123');
+  assert.equal(m.run_index, 3);
+  // A null commit (declared-but-unresolved tag) is preserved, not coerced.
+  assert.equal(buildRunManifest(run, 'corpus/v0', null).corpus_commit, null);
 });
 
 test('downloadSandboxFilePath query-encodes the absolute artifact path', () => {
