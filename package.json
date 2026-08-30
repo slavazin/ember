@@ -16,7 +16,9 @@
     "adr": "node --import tsx tenant-build/tools/adr.ts",
     "adr:check": "node --import tsx tenant-build/tools/adr.ts check",
     "incidents:check": "node --import tsx tenant-incident/tools/incidents.ts check",
-    "round": "node --import tsx tenant-incident/experiments/run-round.ts"
+    "round": "node --import tsx tenant-incident/experiments/run-round.ts",
+    "test:readfm": "bash tools/patch-to-pr-lib.test.sh",
+    "check:outbound-auth": "bash tools/check-outbound-auth.sh"
   },
   "dependencies": {
     "js-yaml": "^4.1.0"

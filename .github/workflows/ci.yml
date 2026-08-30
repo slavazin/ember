@@ -72,3 +72,15 @@ jobs:
       - uses: actions/checkout@v4
       - name: ShellCheck shell scripts
         run: find tenant-incident/scenarios tools -name '*.sh' -print0 | xargs -0 shellcheck
+      # read_fm is a hand-rolled YAML scalar reader that has re-earned the parse-fidelity
+      # class three times in one function (BS-0055/0059/0061). shellcheck can't see that;
+      # this battery pins every spelling that has bitten. CI never otherwise executes the
+      # host scripts, so this is read_fm's only run under gawk.
+      - name: read_fm parse-fidelity battery
+        run: bash tools/patch-to-pr-lib.test.sh
+      # A new outward-authenticating command (gh / npm run) added to the host helper
+      # without the GH_TOKEN="$TOKEN" prefix authenticates as nobody on the Keychain
+      # fallback path — invisible on a host with an ambient token (BS-0051). This static
+      # guard fails the build instead.
+      - name: Outbound-auth token-propagation guard
+        run: bash tools/check-outbound-auth.sh
