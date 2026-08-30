@@ -330,18 +330,24 @@ export function parseReportMeta(text: string): ReportMeta {
  * moving head (MULTI-RUN-STRATEGY.md §3). Returns the blockers that stop a real round: a ref
  * of `main`/`HEAD`, or anything not of the `corpus/v{k}` tag form, is not a freeze.
  *
- * NOTE — the boot side is now BUILT, but UNVERIFIED without a running TrueForge. TrueForge
- * v0.1.4 has no per-session env-injection field (trueforge-harness-verified); the only per-round
- * knob that reaches the sandbox is the skill-registration `ref`, carried in as AGENT_GIT_SKILLS
- * ({name,url,path,ref} per skill). The corpus-reachability guard in close/corpus-write/consolidate
- * reads the ember origin and that ref from AGENT_GIT_SKILLS and clones the corpus to match, so a
- * frozen-tag round is pinned by registering the corpus-facing skills at corpus/v{k}. The
- * store-index skills (rules/cases/beliefs) need no separate handling: they carry a generated
- * routing index, not the frozen records, and registering them at the round's ref alongside the
- * readers clones their embedded indexes at the SAME frozen tag the guard resolves the records at —
- * index and records move together on one pin. This guard asserts the runner's SIDE (the tag
- * exists and is frozen); confirming the sandbox honours it end-to-end is the remaining live check,
- * so the harness stays behind its RUN_ROUND_HARNESS_WIRED gate until a maintainer runs it once.
+ * NOTE — the boot side is BUILT, but UNVERIFIED without a running TrueForge, and the turn-time
+ * pin has a v0.1.4 constraint worth stating exactly. TrueForge v0.1.4 has no per-session
+ * env-injection field (trueforge-harness-verified), and AGENT_GIT_SKILLS — the {name,url,path,ref}
+ * list — is passed ONLY to the one-shot sandbox-init exec that clones the skills, so a TURN-TIME
+ * exec (where the corpus-reachability guard in session/close/corpus-write/consolidate runs) does
+ * not see it. The guard therefore resolves its origin/ref in priority order: EMBER_ORIGIN /
+ * EMBER_CORPUS_REF from the exec env first, then the AGENT_GIT_SKILLS self-match (effective only
+ * where that env is present — sandbox init, or a future harness that persists it), then the
+ * hardcoded defaults (the ember repository, and `main`). So the load-bearing turn-time pin is
+ * EMBER_CORPUS_REF set in the guard's exec env; the default (`main`) is the correct COLD baseline
+ * (R0 = corpus/v0 = main at freeze time). A reproducible frozen-tag round (boot corpus/v0 while
+ * main is v1) needs EMBER_CORPUS_REF delivered to the guard's exec — the still-open live check.
+ * The store-index skills (rules/cases/beliefs) carry a generated routing index, not the frozen
+ * records, so under the append-only corpus a main-ref index can only over-list a frozen tag and the
+ * read protocol forbids applying from an index line; exact index/record co-pinning is available by
+ * registering those skills at the tag too. This guard asserts the runner's SIDE (the tag exists and
+ * is frozen); the harness stays behind its RUN_ROUND_HARNESS_WIRED gate until a maintainer confirms
+ * the turn-time EMBER_CORPUS_REF pin against a running server.
  */
 export function frozenCorpusRefBlockers(ref: string): string[] {
   if (ref === 'main' || ref === 'HEAD' || ref === '') {
@@ -356,9 +362,8 @@ export function frozenCorpusRefBlockers(ref: string): string[] {
 /** The body for `POST /api/v1/sessions`: boot the SAVED agent by name (its model, skills, and
  * bright-data preload are baked into the saved AgentSpec — trueforge-harness-verified). The
  * round's corpus ref is NOT threaded here: v0.1.4 exposes no per-session env-injection field, so
- * the frozen-tag boot is pinned upstream by registering the corpus-reading skills at the round's
- * corpus/v{k} ref (the guard mirrors it via AGENT_GIT_SKILLS — see frozenCorpusRefBlockers), a
- * between-rounds operator step, not a field on this request. */
+ * the frozen-tag boot is pinned at turn time by EMBER_CORPUS_REF in the corpus guard's exec env
+ * (AGENT_GIT_SKILLS is init-only — see frozenCorpusRefBlockers), not by a field on this request. */
 export function buildSessionRequest(agent: string): { agent: { name: string } } {
   return { agent: { name: agent } };
 }

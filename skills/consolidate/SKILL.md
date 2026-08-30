@@ -42,22 +42,28 @@ re-ensured before each corpus-touching read**, never a boot-once step: discharge
 it with an idempotent guard that no-ops when the corpus already resolves and
 self-heals when a recycle has dropped it.
 
-    # The harness clones each registered skill into this sandbox and passes AGENT_GIT_SKILLS —
-    # a base64 JSON list of {name,url,path,ref}, one per skill, every one from the ember repo at
-    # the ref the round registered it at. Read the ember origin URL and that ref from it, so the
-    # corpus resolves at the SAME ref as the skill reading it: a frozen-tag round pins the corpus
-    # by registering the corpus skills at corpus/v{k}, and the clone mirrors that ref instead of
-    # tracking the moving head. EMBER_CORPUS_REF (the ref) or EMBER_ORIGIN (the URL) override when
-    # set; the ref falls back to main. Clone into a scratch path and swap it in only once the
-    # checkout succeeds, so an interrupted prior run leaves no partial /corpus behind; every step
-    # is chained, so a failure publishes no links.
+    # Provision /corpus at turn time. The ember origin and the corpus ref are resolved in a
+    # priority order, because the sandbox carries no ambient handle to either at a turn-time exec
+    # on TrueForge v0.1.4: AGENT_GIT_SKILLS (the base64 {name,url,path,ref} list) is passed only to
+    # the one-shot sandbox-init exec that clones the skills, so a turn-time read of it is empty and
+    # the hardcoded defaults carry the clone. Order —
+    #   origin: EMBER_ORIGIN, else this skill's own url in AGENT_GIT_SKILLS (init only), else the
+    #           ember repository;
+    #   ref:    EMBER_CORPUS_REF, else this skill's own ref in AGENT_GIT_SKILLS (init only), else main.
+    # A round freezes a corpus/v{k} tag by setting EMBER_CORPUS_REF in the guard's exec env; the
+    # AGENT_GIT_SKILLS reads self-pin to the skill's registration ref only where they resolve (a
+    # harness that persists that env, or a run of this guard during sandbox init), so they are a
+    # best-effort hint, never the load-bearing pin. Clone into a scratch path and swap it in only
+    # once the checkout succeeds, so an interrupted prior run leaves no partial /corpus behind;
+    # every step is chained, so a failure publishes no links.
     # The guard tests BOTH published roots — /corpus and the tenant /tenant-incident/corpus —
     # so a partial provisioning (one link present, the other dropped or never made) re-heals
     # instead of reading as done and failing the tenant read.
     { [ -e /corpus/README.md ] && [ -e /tenant-incident/corpus/README.md ]; } || {
       _tf_skills=$(printf %s "${AGENT_GIT_SKILLS:-}" | base64 -d 2>/dev/null || printf '[]') &&
-      _tf_origin="${EMBER_ORIGIN:-$(printf %s "$_tf_skills" | jq -r '[.[].url] | map(select(. != null))[0] // empty')}" &&
-      _tf_ref="${EMBER_CORPUS_REF:-$(printf %s "$_tf_skills" | jq -r '[.[].ref] | map(select(. != null))[0] // empty')}" &&
+      _tf_origin="${EMBER_ORIGIN:-$(printf %s "$_tf_skills" | jq -r --arg n consolidate '([.[]|select(.name==$n).url]+[.[].url]|map(select(.!=null)))[0] // empty')}" &&
+      _tf_origin="${_tf_origin:-https://github.com/slavazin/ember.git}" &&
+      _tf_ref="${EMBER_CORPUS_REF:-$(printf %s "$_tf_skills" | jq -r --arg n consolidate '([.[]|select(.name==$n).ref]+[.[].ref]|map(select(.!=null)))[0] // empty')}" &&
       _tf_ref="${_tf_ref:-main}" &&
       rm -rf /opt/tf/corpus-src.tmp &&
       git clone --no-checkout --depth 1 --filter=blob:none --branch "$_tf_ref" "$_tf_origin" /opt/tf/corpus-src.tmp &&
@@ -79,12 +85,12 @@ a no-op when both corpus roots resolve, a self-heal when a recycle has dropped i
 idle recycle drops the provisioned corpus while re-cloning the skills, so a
 boot-once step reads an empty `/corpus` on a later turn.
 
-**Do:** let the round pin the corpus by registering the corpus skills at its
-`corpus/v{k}` ref — the guard reads that ref from `AGENT_GIT_SKILLS` and clones the
-corpus to match, so the signal it reads is the one the frozen tag holds.
-**Don't:** don't pin the clone to `main` — a frozen-tag round would then read the
-moving head, and a baseline round and a later round would see one corpus, collapsing
-the frozen delta the round exists to measure.
+**Do:** freeze a round on a `corpus/v{k}` tag by setting `EMBER_CORPUS_REF` to it in
+the guard's exec environment — the clone reads that ref, so the signal it reads is the one the
+frozen tag holds.
+**Don't:** don't lean on `AGENT_GIT_SKILLS` to carry the pin at a turn-time read —
+v0.1.4 passes it only to the sandbox-init step, so a turn-time read is empty and the
+ref falls back to `main`; a round that must freeze a tag sets `EMBER_CORPUS_REF`.
 
 ## What this pass reads
 
