@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Corpus-deposit helper (U1 fallback, ADR-0009 + ADR-0015 + ADR-0018): turn a
+# Corpus-deposit helper (U1 fallback, ADR-0009 + ADR-0015 + ADR-0019): turn a
 # sandbox-produced patch and/or close-out record into a SIGNED, LABELLED
 # corpus-deposit PR — locally, with the scoped push token held HERE (never in the
 # sandbox). Human-gated: pushes/opens a PR only with --push; otherwise it dry-runs
@@ -11,7 +11,7 @@
 # those trailers back off the applied commit and DERIVES the branch, title, label,
 # and body from them — the surface markers restate the commit, they never invent it.
 #
-# The CLOSE-OUT RECORD (ADR-0018) carries the close-out's own content — the
+# The CLOSE-OUT RECORD (ADR-0019) carries the close-out's own content — the
 # consulted-entry dispositions, the report metadata (steps/disposition/forecast_hit),
 # and the `latch-walk:` attestation — that `git format-patch -1` leaves behind in the
 # branch work product. It is retrieved from the sandbox branch over the same ADR-0009
@@ -147,7 +147,7 @@ if [ -n "$PATCH" ]; then
   # not just the tip, and require the full ADR-0015 marker (author name+email plus
   # the four Incident-*/Deposited-By trailers), all sharing one Incident-Id. The
   # close-out commit this helper adds below is host-built, not from the untrusted
-  # patch, so it is admitted on its own terms (ADR-0018) and is not subject to this
+  # patch, so it is admitted on its own terms (ADR-0019) and is not subject to this
   # anti-smuggling guard — which is why the guard runs here, before it is added.
   COMMITS="$(git -C "$WT" rev-list --reverse origin/main..HEAD)"
   [ -n "$COMMITS" ] || reject "the patch applied no commits over origin/main (ADR-0015)."
@@ -185,15 +185,15 @@ if [ -n "$CLOSEOUT" ]; then
   rec_incident="$(read_fm "$CLOSEOUT" incident)"
   rec_incident="${rec_incident%\"}"; rec_incident="${rec_incident#\"}"
   rec_incident="${rec_incident%\'}"; rec_incident="${rec_incident#\'}"
-  [ -n "$rec_incident" ] || reject "close-out record has no 'incident:' frontmatter field — cannot mark the record (ADR-0018)."
+  [ -n "$rec_incident" ] || reject "close-out record has no 'incident:' frontmatter field — cannot mark the record (ADR-0019)."
   case "$rec_incident" in
     *[!A-Za-z0-9._-]* | .. | . )
-      reject "close-out 'incident:' ($rec_incident) is not a safe id ([A-Za-z0-9._-], no path parts) (ADR-0018)." ;;
+      reject "close-out 'incident:' ($rec_incident) is not a safe id ([A-Za-z0-9._-], no path parts) (ADR-0019)." ;;
   esac
 
   if [ -n "$PATCH" ]; then
     # candidate + close-out: the record must belong to the deposit it rides.
-    [ "$rec_incident" = "$INCIDENT_ID" ] || reject "close-out incident ($rec_incident) ≠ candidate incident ($INCIDENT_ID) — record does not match the deposit (ADR-0018)."
+    [ "$rec_incident" = "$INCIDENT_ID" ] || reject "close-out incident ($rec_incident) ≠ candidate incident ($INCIDENT_ID) — record does not match the deposit (ADR-0019)."
   else
     # Quiet close: the record is the whole deposit. The incident id names the branch and
     # the record path; a quiet close is grouped by the work-shape it declares, not a class
@@ -260,7 +260,7 @@ if [ "$MODE" = "quiet" ]; then
   cat > "$BODY_FILE" <<EOF
 Produced by the **incident-responder** agent in a Daytona sandbox; the close-out record
 was retrieved on the host and this PR opened via \`tools/patch-to-pr.sh\` (ADR-0009 +
-ADR-0018). The scoped push token stays on the host; the sandbox never authenticates
+ADR-0019). The scoped push token stays on the host; the sandbox never authenticates
 outward.
 
 This is a **quiet close** — the session drafted no candidate, so this PR carries the
@@ -273,7 +273,7 @@ carries no \`Incident-Class\` trailer.
 The merge of this PR is the human gate (Art. 2 / ADR-0007). **Admit with a merge
 commit, not a squash** — a squash collapses the close-out commit's incident-responder
 author and \`Incident-*\`/\`Close-Record\` trailers, the durable markers this record is
-signed with (ADR-0015 / ADR-0018).
+signed with (ADR-0015 / ADR-0019).
 
 Incident-Id: ${INCIDENT_ID}
 Close-Record: true
@@ -300,7 +300,7 @@ EOF
   if [ -n "$CLOSEOUT" ]; then
     # Fold the close-out record's own content into the body so the dispositions,
     # report metadata, and latch-walk attestation reach the PR alongside the deposit
-    # (ADR-0018); the record also rides the branch as a committed file.
+    # (ADR-0019); the record also rides the branch as a committed file.
     {
       echo ""
       echo "## Close-out record"
