@@ -56,12 +56,17 @@ re-ensured before each corpus-touching read**, never a boot-once step: discharge
 with an idempotent guard that no-ops when the corpus already resolves and
 self-heals when a recycle has dropped it.
 
-    # `$EMBER_ORIGIN` is the ember repository the harness already clones skills from
+    # `$EMBER_ORIGIN` is the ember repository the harness already clones skills from.
+    # Clone into a scratch path and swap it in only once the checkout succeeds, so an
+    # interrupted prior run cannot leave a partial tree that blocks the retry or a
+    # half-provisioned /corpus; every step is chained, so a failure publishes no links.
     [ -e /corpus/README.md ] || {
-      git clone --no-checkout --depth 1 --filter=blob:none "$EMBER_ORIGIN" /opt/tf/corpus-src
-      git -C /opt/tf/corpus-src sparse-checkout set corpus tenant-incident/corpus
-      git -C /opt/tf/corpus-src checkout
-      ln -sfn /opt/tf/corpus-src/corpus /corpus
+      rm -rf /opt/tf/corpus-src.tmp &&
+      git clone --no-checkout --depth 1 --filter=blob:none "$EMBER_ORIGIN" /opt/tf/corpus-src.tmp &&
+      git -C /opt/tf/corpus-src.tmp sparse-checkout set corpus tenant-incident/corpus &&
+      git -C /opt/tf/corpus-src.tmp checkout &&
+      rm -rf /opt/tf/corpus-src && mv /opt/tf/corpus-src.tmp /opt/tf/corpus-src &&
+      ln -sfn /opt/tf/corpus-src/corpus /corpus &&
       ln -sfn /opt/tf/corpus-src/tenant-incident /tenant-incident
     }
 
