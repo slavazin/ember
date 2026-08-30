@@ -58,10 +58,12 @@ self-heals when a recycle has dropped it.
 
     # The harness clones each registered skill into this sandbox and passes AGENT_GIT_SKILLS —
     # a base64 JSON list of {name,url,path,ref}, one per skill, every one from the ember repo at
-    # the ref the round registered it at. Read the ember origin URL and that ref from it, so the
-    # corpus resolves at the SAME ref as the skill reading it: a frozen-tag round pins the corpus
-    # by registering the corpus skills at corpus/v{k}, and the clone mirrors that ref instead of
-    # tracking the moving head. EMBER_CORPUS_REF (the ref) or EMBER_ORIGIN (the URL) override when
+    # the ref the round registered it at. Read the ember origin URL and the ref THIS skill was
+    # registered at — matched by name in that list, so a non-corpus skill left at main cannot pull
+    # the clone off a frozen tag — so the corpus resolves at the SAME ref as the skill reading it:
+    # a frozen-tag round pins the corpus by registering the corpus-facing skills at corpus/v{k},
+    # and each clone mirrors its own skill's ref instead of tracking the moving head.
+    # EMBER_CORPUS_REF (the ref) or EMBER_ORIGIN (the URL) override when
     # set; the ref falls back to main. Clone into a scratch path and swap it in only once the
     # checkout succeeds, so an interrupted prior run leaves no partial /corpus behind; every step
     # is chained, so a failure publishes no links.
@@ -70,8 +72,8 @@ self-heals when a recycle has dropped it.
     # instead of reading as done and failing the tenant read.
     { [ -e /corpus/README.md ] && [ -e /tenant-incident/corpus/README.md ]; } || {
       _tf_skills=$(printf %s "${AGENT_GIT_SKILLS:-}" | base64 -d 2>/dev/null || printf '[]') &&
-      _tf_origin="${EMBER_ORIGIN:-$(printf %s "$_tf_skills" | jq -r '[.[].url] | map(select(. != null))[0] // empty')}" &&
-      _tf_ref="${EMBER_CORPUS_REF:-$(printf %s "$_tf_skills" | jq -r '[.[].ref] | map(select(. != null))[0] // empty')}" &&
+      _tf_origin="${EMBER_ORIGIN:-$(printf %s "$_tf_skills" | jq -r --arg n close '([.[]|select(.name==$n).url]+[.[].url]|map(select(.!=null)))[0] // empty')}" &&
+      _tf_ref="${EMBER_CORPUS_REF:-$(printf %s "$_tf_skills" | jq -r --arg n close '([.[]|select(.name==$n).ref]+[.[].ref]|map(select(.!=null)))[0] // empty')}" &&
       _tf_ref="${_tf_ref:-main}" &&
       rm -rf /opt/tf/corpus-src.tmp &&
       git clone --no-checkout --depth 1 --filter=blob:none --branch "$_tf_ref" "$_tf_origin" /opt/tf/corpus-src.tmp &&
