@@ -13,6 +13,49 @@ the close are the whole memory. The close-out half — dispositions, retro lense
 candidates — is the `close` skill, run from fresh context after implementation; it
 reads the consultation record the working session keeps.
 
+## Corpus reachability (invariant)
+
+**The corpus is ensured reachable before any corpus read.** Every `/corpus/…` path
+this skill reads — the shape-matched store records the boot consults (the rule,
+case, and belief records behind a fired hook) and the planning latch table —
+resolves through a repo-root symlink the sandbox does not carry by default, and the
+sandbox is recycled after an idle interval, dropping a corpus provisioned once at
+boot while the harness re-clones only the skills. So reachability is an **invariant
+re-ensured before each corpus-touching read**, never a boot-once step: discharge it
+with an idempotent guard that no-ops when the corpus already resolves and self-heals
+when a recycle has dropped it.
+
+    # `$EMBER_ORIGIN` is the ember repository the harness already clones skills from.
+    # Clone into a scratch path and swap it in only once the checkout succeeds, so an
+    # interrupted prior run cannot leave a partial tree that blocks the retry or a
+    # half-provisioned /corpus; every step is chained, so a failure publishes no links.
+    [ -e /corpus/README.md ] || {
+      rm -rf /opt/tf/corpus-src.tmp &&
+      git clone --no-checkout --depth 1 --filter=blob:none "$EMBER_ORIGIN" /opt/tf/corpus-src.tmp &&
+      git -C /opt/tf/corpus-src.tmp sparse-checkout set corpus tenant-incident/corpus &&
+      git -C /opt/tf/corpus-src.tmp checkout &&
+      rm -rf /opt/tf/corpus-src && mv /opt/tf/corpus-src.tmp /opt/tf/corpus-src &&
+      ln -sfn /opt/tf/corpus-src/corpus /corpus &&
+      ln -sfn /opt/tf/corpus-src/tenant-incident /tenant-incident
+    }
+
+The sparse set is `corpus/` **plus** `tenant-incident/corpus/`, and it excludes
+`tenant-incident/scenarios/`: the scenario is the environment, and an agent that can
+read the scenario reads the mechanism and the fix instead of investigating them —
+the environment supplies evidence, never the answer. The sparse set materializes
+only those two subtrees, so `/tenant-incident/scenarios` never resolves. This
+mirrors the harness's own per-sandbox skill self-heal.
+
+**Do:** re-ensure reachability with the idempotent guard before each corpus read —
+a no-op when `/corpus` resolves, a self-heal when a recycle has dropped it.
+**Don't:** don't provision the corpus once at boot and treat it as durable — the
+idle recycle drops the provisioned corpus while re-cloning the skills, so a
+boot-once step reads an empty `/corpus` on a later turn.
+
+**Do:** keep the sparse set scoped to `corpus/` plus `tenant-incident/corpus/`.
+**Don't:** don't widen the sparse set to `tenant-incident/scenarios/` — pulling the
+scenario into the agent's reach contaminates the diagnosis with the answer.
+
 ## Boot
 
 1. **Load the law.** Open the `constitution` skill before any planning.
@@ -24,7 +67,17 @@ reads the consultation record the working session keeps.
    record, and git history is the trace.
 3. **Orient.** Declare the shape of the work in hand — the terms a store index or
    a latch row can match against.
-4. **Walk the planning latches.** Poll each row of `corpus/latches/planning.md`
+4. **Consult the shape-matched stores.** Against the work-shape declared at
+   Orient, open each store index whose stage-one key routes on it: the `rules`
+   index for a duty whose `fires-when` matches the presentation in hand, the
+   `cases` index for a settled constraint whose summary matches, the `beliefs`
+   index for a world-claim the work would depend on. Open the record behind any
+   hook that fires and apply from the record — the duty, the constraint, the
+   priced claim — following each store index's own read protocol, and record each
+   consulted entry as the consultation happens (below). A merged rule's duty
+   reaches the work only when the index is opened before the diagnosis, so this
+   consultation precedes recon.
+5. **Walk the planning latches.** Poll each row of `corpus/latches/planning.md`
    against the work in hand and discharge the owed act of every row that fires;
    leave the walk's `latch-walk:` line in the work product (format and cautions:
    [/corpus/latches/README.md](/corpus/latches/README.md)).
@@ -33,6 +86,12 @@ reads the consultation record the working session keeps.
 indexes and latch rows route on.
 **Don't:** don't open stores at random ahead of a declared shape; an unrouted read
 is the scan the indexes exist to replace.
+
+**Do:** open every store index whose key matches the declared shape before the
+diagnosis begins, and apply from the record it opens, never from the index line.
+**Don't:** don't defer the store indexes past the diagnosis or fold them into
+recon — an unconsulted rule is unreachable knowledge, silent until a miss pays for
+it, and the corpus-carried learning the boot exists to recover never arrives.
 
 **Do:** emit the planning walk's `latch-walk:` line in the work product.
 **Don't:** don't treat the attestation as proof the consultation was honest — it
