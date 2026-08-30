@@ -95,17 +95,18 @@ moot). Store-uniform, inherited by every entry:
   case of the same class, or a rule, belief, or decision whose warrant cites this
   case as one of its recurrences. The reverse view is derived, never hand-listed.
 - **Floor gate:** two mechanical checks, split the way the build ADR store's are.
-  Byte-immutability holds from admission: the corpus-lint frozen-path check
-  freezes every admitted `INC-nnnn.md` against the merge-base — the body and
-  every frontmatter line except `status` and `superseded-by` — so a closed case
-  is superseded, never edited or deleted in place. Shape validation — id
-  canonical and equal to the filename, the `status`, `forecast-outcome`, and
-  `disposition` vocabularies honoured, the supersession pointer reciprocal, and
-  the required sections present — is owned by the store's own validator, wired
-  when the incident loop mints the first case; this SCHEMA is the contract that
-  validator enforces, and the store stays empty-but-valid until then. Residue:
-  no check reads whether the root cause is true, an anchor supports its claim, or
-  the learning generalizes — that stays human review.
+  Shape is owned by the store's own validator, `incidents check`, keyed off this
+  SCHEMA: id canonical and equal to the filename, the `status`,
+  `forecast-outcome`, and `disposition` vocabularies honoured, every frontmatter
+  key known, the required sections present, a `superseded-by` pointer that
+  resolves, and no self-reference in `related`. Byte-immutability is owned by the
+  corpus-lint frozen-path check: it freezes every admitted `INC-nnnn.md` against
+  the merge-base — the body and every frontmatter line except `status` and
+  `superseded-by` — so a closed case is superseded, never edited or deleted in
+  place. The store stays empty-but-valid until the loop mints the first case:
+  both gates run over an empty store and pass. Residue: no check reads whether
+  the root cause is true, an anchor supports its claim, or the learning
+  generalizes — that stays human review.
 
 ## Do / Don't
 

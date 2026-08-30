@@ -33,6 +33,6 @@ belief stores co-referenced under [/corpus](/corpus/README.md); this store is
 a self-describing tenant store — it ships its own contract in
 [SCHEMA.md](SCHEMA.md) because no layer store carries incident-case semantics,
 so its entries are governed by that contract, not by the layer entry checks.
-The SCHEMA's floor-gate note records which of its checks are mechanical and
-which are the loop-phase follow-up; the distinction from a decision record is
-argued in the SCHEMA header.
+Its shape is gated by the store's own validator and its immutability by
+corpus-lint's frozen-path check — the split the SCHEMA's floor-gate note
+records; the distinction from a decision record is argued in the SCHEMA header.
