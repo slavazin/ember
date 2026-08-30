@@ -317,16 +317,28 @@ if [ "$PUSH" = "--push" ]; then
     --color 8A63D2 --description "Agent-authored incident-responder corpus deposit (ADR-0015)" 2>/dev/null || true
   # The auth header rides GIT_CONFIG_* env vars, not `git -c …$TOKEN` — a command-line
   # arg is visible to `ps`/process inspection; the env value is not. The branch name is
-  # content-addressed (incident/<id>-<tree>), so a remote branch of this name already
-  # carries this exact tree. Skip the push when it exists: a partial earlier run (pushed,
-  # then failed before opening the PR) leaves that branch, and a fresh commit's per-run
-  # timestamp would otherwise make a re-push fail as a non-fast-forward and strand the
-  # required PR. Idempotent by content, not by commit sha.
-  if GIT_CONFIG_COUNT=1 \
-     GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
-     GIT_CONFIG_VALUE_0="AUTHORIZATION: bearer $TOKEN" \
-       git -C "$WT" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
-    echo "→ remote branch $BRANCH already exists (same content-addressed tree); skipping push"
+  # content-addressed (incident/<id>-<tree>), and a re-push of a fresh commit with a new
+  # per-run timestamp would otherwise fail as a non-fast-forward and strand the required
+  # PR. So make the push idempotent — but by verifying the CONTENT, not just the name: a
+  # name match alone does not prove identical content (a moved branch, or an abbreviated
+  # tree-sha collision). Resolve the remote tip, compare its tree to HEAD's, skip only on
+  # an exact match, and fail safely on a mismatch rather than reuse stale content.
+  REMOTE_SHA="$(GIT_CONFIG_COUNT=1 \
+    GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
+    GIT_CONFIG_VALUE_0="AUTHORIZATION: bearer $TOKEN" \
+    git -C "$WT" ls-remote origin "refs/heads/$BRANCH" | awk 'NR==1 {print $1}')"
+  if [ -n "$REMOTE_SHA" ]; then
+    GIT_CONFIG_COUNT=1 \
+    GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
+    GIT_CONFIG_VALUE_0="AUTHORIZATION: bearer $TOKEN" \
+      git -C "$WT" fetch -q origin "$BRANCH"
+    REMOTE_TREE="$(git -C "$WT" rev-parse "FETCH_HEAD^{tree}")"
+    LOCAL_TREE="$(git -C "$WT" rev-parse "HEAD^{tree}")"
+    if [ "$REMOTE_TREE" = "$LOCAL_TREE" ]; then
+      echo "→ remote branch $BRANCH already carries this exact tree; skipping push (idempotent re-run)"
+    else
+      reject "remote branch $BRANCH exists with a DIFFERENT tree ($REMOTE_TREE vs $LOCAL_TREE) — refusing to reuse stale or unrelated content (ADR-0019)."
+    fi
   else
     GIT_CONFIG_COUNT=1 \
     GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
@@ -335,8 +347,13 @@ if [ "$PUSH" = "--push" ]; then
   fi
   # Open a PR only if none is already open for this head — so a retry after a push that
   # succeeded but whose PR-open failed does not error on "a pull request already exists".
-  EXISTING_PR="$(GH_TOKEN="$TOKEN" gh pr list --repo slavazin/ember --head "$BRANCH" --state open \
-    --json url --jq '.[0].url // empty' 2>/dev/null || true)"
+  # Do NOT suppress a failed lookup: an auth/network error must surface, not masquerade as
+  # "no PR" and drive a spurious create. stderr is left intact and a failure exits here.
+  if ! EXISTING_PR="$(GH_TOKEN="$TOKEN" gh pr list --repo slavazin/ember --head "$BRANCH" --state open \
+    --json url --jq '.[0].url // empty')"; then
+    echo "✗ failed to query existing pull requests for $BRANCH — not filing, to avoid a duplicate (surface to human)" >&2
+    exit 3
+  fi
   if [ -n "$EXISTING_PR" ]; then
     echo "→ pull request already open for $BRANCH: $EXISTING_PR"
   else
