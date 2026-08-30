@@ -105,25 +105,45 @@ This is the wiring path the entry is designed against, per the TrueForge docs.
    re-register on merge.
 
 > **Track B status.** The layer toolchain in Track A is verified green in
-> [CI](/.github/workflows/ci.yml). The end-to-end harness wiring in Track B is
-> the designed integration path and is not yet verified in this repository as of
-> 2026-08-28; see [Status](#status) and
-> [#honest-limits](#honest-limits).
+> [CI](/.github/workflows/ci.yml). The end-to-end harness wiring in Track B runs
+> against a live TrueForge server (confirmed 2026-08-30) on two paths, both in the
+> merge gate awaiting a human:
+>
+> - a single incident-responder session that booted from the corpus, investigated
+>   [pool-exhaustion-a](/tenant-incident/scenarios/pool-exhaustion-a), reached a
+>   correct diagnosis, and filed the first live corpus deposit — [incident
+>   INC-0001](https://github.com/slavazin/ember/pull/42), the
+>   `connection-pool-exhaustion` class;
+> - the round-runner fan-out, whose live HTTP path (session → turn →
+>   poll-to-terminal → artifact download → `grade.sh` → deposit-patch) completes
+>   end-to-end and emits **measured ledger rows** once TrueForge's `data` response
+>   envelope is unwrapped ([PR #43](https://github.com/slavazin/ember/pull/43)).
+>
+> The **measured before/after delta** — a warm incident that reads a promoted rule,
+> graded against the cold baseline and checkpointed in git — is still pending; see
+> [Status](#status) and [#honest-limits](#honest-limits).
 
 ## The demo arc — the learning delta
 
 The centerpiece is one failure class seen twice, and the step reduction between
-them. Both halves are built and instrumented; the three-step sequence here is
-the **designed** arc the instruments measure — not a measured result (see
-[#honest-limits](#honest-limits)).
+them. Both halves are built and instrumented; the first incident of the class
+has run once end-to-end (2026-08-30), and its deposit is in the merge gate. The
+step *reduction* is still the **designed** arc the instruments measure — the
+warm incident that reads the promoted rule has not yet been graded against the
+cold one (see [#honest-limits](#honest-limits)).
 
-- **First incident of a class.** A fresh session boots from the corpus, injects
+- **First incident of a class** (run 2026-08-30). A fresh session boots from the
+  corpus, injects
   [pool-exhaustion-a](/tenant-incident/scenarios/pool-exhaustion-a) (a Node +
   Postgres service whose bounded connection pool saturates and presents as a
   gateway-timeout storm before any datastore error). Recon subagents fan out; a
   diagnosis forecast is frozen before probing; the probe runs in the sandbox;
-  the fix pauses on a harness approval. At close, the session files one candidate
-  entry through the merge gate. The pool is found late — the step count is high.
+  the fix pauses on a harness approval. The diagnosis held: an undersized pool
+  (max 5) saturated under an ~8 req/s surge, queuing requests past the gateway's
+  2 s read timeout into a 504 storm while Postgres stayed healthy; the fix lever
+  (`POOL_MAX` 5→20) drove `waiting` 40→0 and 504→200 against the live surface.
+  At close, the session files one candidate entry through the merge gate — [INC-0001](https://github.com/slavazin/ember/pull/42),
+  awaiting merge. The pool is found late — the step count is high.
 - **Promotion (human-gated).** A second surface,
   [pool-exhaustion-b](/tenant-incident/scenarios/pool-exhaustion-b) (a Python +
   Redis service — different language, framework, datastore, and pool library,
@@ -143,20 +163,22 @@ metric, and each scenario's README states exactly what its grader does and does
 not verify.
 
 <a id="status"></a>
-## Status — what runs, as of 2026-08-28
+## Status — what runs, as of 2026-08-30
 
-| Built and green | Designed, not yet run |
-|---|---|
-| The corpus scaffold — five [stores](/corpus) with README + SCHEMA pairs, and [LANGUAGE.md](/corpus/LANGUAGE.md), the binding authoring authority | The end-to-end loop under TrueForge (Track B wiring) |
-| The [skill pack](/skills) and [role templates](/roles) | The measured before/after step counts (the incident corpus is genesis-empty until the loop mints entries) |
-| The toolchain — `corpus-lint`, `index-gen`, the shared [index contract](/tools/INDEX-CONTRACT.md), all green in [CI](/.github/workflows/ci.yml) on Linux and Windows | The Bright Data seed harvest (postdiction beliefs) |
-| A **real second tenant**, [tenant-build](/tenant-build) — the build's own ADR store, installed without touching a layer file (the reusability claim, demonstrated) | |
-| The recurrence pair — [pool-exhaustion-a / -b](/tenant-incident/scenarios) — with `inject` / `reset` / `grade` scripts | |
+| Built and green | Run once, deposit in merge-wait | Designed, not yet run |
+|---|---|---|
+| The corpus scaffold — five [stores](/corpus) with README + SCHEMA pairs, and [LANGUAGE.md](/corpus/LANGUAGE.md), the binding authoring authority | The end-to-end loop under TrueForge — one incident of the `connection-pool-exhaustion` class, boot → investigate → close, filing [INC-0001](https://github.com/slavazin/ember/pull/42) | The measured before/after step counts (the warm incident that reads the promoted rule has not been graded against the cold one) |
+| The [skill pack](/skills) and [role templates](/roles) | The round-runner fan-out live path — session → turn → poll → artifact → `grade.sh` → deposit-patch — emitting measured ledger rows ([PR #43](https://github.com/slavazin/ember/pull/43); cold baseline confirmed on two models, `pool-exhaustion-a`, 2 steps, `corpus/v0`) | The promotion of a second anchored recurrence into a `decision` + `rule` |
+| The toolchain — `corpus-lint`, `index-gen`, the shared [index contract](/tools/INDEX-CONTRACT.md), all green in [CI](/.github/workflows/ci.yml) on Linux and Windows | | The Bright Data seed harvest (postdiction beliefs) |
+| A **real second tenant**, [tenant-build](/tenant-build) — the build's own ADR store, installed without touching a layer file (the reusability claim, demonstrated) | | |
+| The recurrence pair — [pool-exhaustion-a / -b](/tenant-incident/scenarios) — with `inject` / `reset` / `grade` scripts | | |
 
-**To fill in once the loop has run** (S-001 … S-009): the measured step counts
-for the first incident and the later one, the ratio between them, and the
-permalinks to the checkpoint PRs that carry each corpus state. Until those exist
-in git, the demo-arc section describes the designed arc, honestly labelled.
+**To fill in once a full round has run** (S-001 … S-009): the measured step
+counts for the first incident and the later one, the ratio between them, and the
+permalinks to the checkpoint PRs that carry each corpus state. The
+[delta ledger](/tenant-incident/experiments/ledger.md) stays empty until round 0
+grades the cold baseline; until then, the demo-arc section describes the designed
+arc, honestly labelled.
 
 ## Qodo Code Review Evidence
 
@@ -208,12 +230,38 @@ honestly disclosed, and the review judgments it cannot make stay with the human.
   observed), never as rates. The two are distinct sinks — the PR trail is the
   session trace, the ledger the metric store — not one standing in for the other.
 
-- **The delta is designed and instrumented, not yet measured.** As of
-  2026-08-28 the incident corpus is genesis-empty and the loop has not run
-  end-to-end under the harness, so the before/after numbers do not yet exist in
-  git. The scenario pair, the graders, and the promotion ladder are built; the
-  measurement is not. The demo-arc section is labelled accordingly, and the
-  [Status](#status) table separates the two.
+- **The loop runs live; the delta has not been measured.** As of 2026-08-30 both
+  Track B paths run against a live harness: one incident-responder session
+  diagnosed the `connection-pool-exhaustion` class correctly, verified its fix
+  lever against the live surface, and filed its first deposit
+  ([INC-0001](https://github.com/slavazin/ember/pull/42), in the merge gate); and
+  the round-runner fan-out completes end-to-end and emits measured ledger rows
+  ([PR #43](https://github.com/slavazin/ember/pull/43)), with a cold baseline
+  confirmed on two models. What a live path and a cold baseline do **not**
+  establish is the *reduction*: the before/after step numbers require a warm
+  incident that reads a promoted rule, graded against that baseline, and the
+  [delta ledger](/tenant-incident/experiments/ledger.md) in git stays empty until
+  a round is checkpointed. The scenario pair, the graders, and the promotion
+  ladder are built; the measured delta is not. The demo-arc section is labelled
+  accordingly, and the [Status](#status) table separates the three states.
+
+- **The harness sandbox runs briefs, not scenario stacks.** In the harness
+  fan-out (observed 2026-08-30) the scenario's service stack is not stood up in the
+  agent's sandbox, so a run diagnoses from the incident brief plus a synthetic
+  probe and reports an honest `forecast: miss`/`blocked` rather than a
+  live-confirmed one — unlike the single hand-driven run behind INC-0001, which
+  trialed the fix against a running surface. Neither biases the step-count metric,
+  but the harness path proves *early rule-firing*, not *live fix verification*;
+  the two are distinct claims, and standing the stack up in-sandbox is tracked
+  work.
+
+- **The first deposit was filed host-side, not agent-signed.** On the 2026-08-30
+  run the agent produced correct case content but its own `format-patch` mis-signed
+  the git envelope, so [INC-0001](https://github.com/slavazin/ember/pull/42) was
+  filed host-side from the agent's drafted content, shape-validated with `incidents
+  check` (1 entry, 0 problems). The three-party marking (agent proposes, host
+  applies, human merges) and the merge-is-the-only-write gate hold; the agent's
+  unattended envelope-signing does not yet, and closing that gap is tracked work.
 
 - **Solo-judge precondition.** The promotion ladder and the approval gate presume
   a **single human adjudicator**. There is no multi-reviewer quorum, no tie-break,
