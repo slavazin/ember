@@ -101,13 +101,13 @@ resolve_token() {
 # stripped by the caller. Prints nothing when the field (or the frontmatter) is absent.
 read_fm() {
   awk -v key="$2" '
+    { sub(/\r$/,"") }                 # normalize CRLF on EVERY line before any delimiter check
     NR==1 && $0 != "---" { exit }
     NR==1 { infm=1; next }
     infm && $0 == "---" { exit }
     infm {
-      line=$0; sub(/\r$/,"",line)
-      if (line ~ ("^" key ":")) {
-        val=line; sub(("^" key ":[ \t]*"),"",val); sub(/[ \t]+$/,"",val)
+      if ($0 ~ ("^" key ":")) {
+        val=$0; sub(("^" key ":[ \t]*"),"",val); sub(/[ \t]+$/,"",val)
         print val; exit
       }
     }
@@ -315,14 +315,34 @@ if [ "$PUSH" = "--push" ]; then
   echo "→ ensuring '$LABEL' label exists, pushing $BRANCH, opening PR (human-authorized)…"
   GH_TOKEN="$TOKEN" gh label create "$LABEL" --repo slavazin/ember \
     --color 8A63D2 --description "Agent-authored incident-responder corpus deposit (ADR-0015)" 2>/dev/null || true
-  # Inject the auth header via GIT_CONFIG_* env vars, not `git -c …$TOKEN` — a
-  # command-line arg is visible to `ps`/process inspection; the env value is not.
-  GIT_CONFIG_COUNT=1 \
-  GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
-  GIT_CONFIG_VALUE_0="AUTHORIZATION: bearer $TOKEN" \
-    git -C "$WT" push -q origin "$BRANCH"
-  GH_TOKEN="$TOKEN" gh pr create --repo slavazin/ember --head "$BRANCH" --base main \
-    --label "$LABEL" --title "$TITLE" --body-file "$BODY_FILE"
+  # The auth header rides GIT_CONFIG_* env vars, not `git -c …$TOKEN` — a command-line
+  # arg is visible to `ps`/process inspection; the env value is not. The branch name is
+  # content-addressed (incident/<id>-<tree>), so a remote branch of this name already
+  # carries this exact tree. Skip the push when it exists: a partial earlier run (pushed,
+  # then failed before opening the PR) leaves that branch, and a fresh commit's per-run
+  # timestamp would otherwise make a re-push fail as a non-fast-forward and strand the
+  # required PR. Idempotent by content, not by commit sha.
+  if GIT_CONFIG_COUNT=1 \
+     GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
+     GIT_CONFIG_VALUE_0="AUTHORIZATION: bearer $TOKEN" \
+       git -C "$WT" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+    echo "→ remote branch $BRANCH already exists (same content-addressed tree); skipping push"
+  else
+    GIT_CONFIG_COUNT=1 \
+    GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
+    GIT_CONFIG_VALUE_0="AUTHORIZATION: bearer $TOKEN" \
+      git -C "$WT" push -q origin "$BRANCH"
+  fi
+  # Open a PR only if none is already open for this head — so a retry after a push that
+  # succeeded but whose PR-open failed does not error on "a pull request already exists".
+  EXISTING_PR="$(GH_TOKEN="$TOKEN" gh pr list --repo slavazin/ember --head "$BRANCH" --state open \
+    --json url --jq '.[0].url // empty' 2>/dev/null || true)"
+  if [ -n "$EXISTING_PR" ]; then
+    echo "→ pull request already open for $BRANCH: $EXISTING_PR"
+  else
+    GH_TOKEN="$TOKEN" gh pr create --repo slavazin/ember --head "$BRANCH" --base main \
+      --label "$LABEL" --title "$TITLE" --body-file "$BODY_FILE"
+  fi
 else
   echo ""
   echo "DRY-RUN (no --push). Would run:"
