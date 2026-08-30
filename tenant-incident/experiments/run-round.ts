@@ -157,7 +157,22 @@ function tagExists(tag: string): boolean {
 function resolveCorpusTag(tag: string, create: boolean): string | null {
   // Peel to the commit with ^{commit}: a hand-cut ANNOTATED tag resolves to the tag object,
   // not the commit it points at, and that object SHA must never be recorded as the corpus commit.
-  if (tagExists(tag)) return git(['rev-parse', `${tag}^{commit}`]);
+  // tagExists only proves the ref exists — a tag targeting a tree/blob does NOT peel. Use
+  // --verify --quiet so a non-peelable ref exits with status 1 specifically; ONLY that clean
+  // exit-1 is treated as unresolved (→ the preflight blocker). Any OTHER git failure
+  // (git-not-found → ENOENT/no status, bad/corrupt repo → 128) is rethrown, never masked as an
+  // ordinary unresolved tag.
+  if (tagExists(tag)) {
+    try {
+      return git(['rev-parse', '--verify', '--quiet', `${tag}^{commit}`]);
+    } catch (e) {
+      if ((e as { status?: number }).status === 1) {
+        info(`corpus tag ${tag} exists but does not peel to a commit (targets a tree/blob) — treated as unresolved`);
+        return null;
+      }
+      throw e;
+    }
+  }
   if (!create) {
     info(`corpus tag ${tag} does not exist — pass --tag to freeze it at the current corpus HEAD, or create it by hand before a real round`);
     return null;
