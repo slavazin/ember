@@ -30,6 +30,38 @@ Load this at a consolidation pass, from fresh context. It re-derives its inputs
 from git history and the pull requests, so an agent holding none of the fast
 loop's context runs it in full.
 
+## Corpus reachability (invariant)
+
+**The corpus is ensured reachable before any corpus read.** Every `/corpus/…`
+path this pass reads — the lens language, the latch tables, and the target
+stores it searches for a candidate's cheapest existing home — resolves through a
+repo-root symlink the sandbox does not carry by default, and the sandbox is
+recycled after an idle interval, dropping a corpus provisioned once at boot while
+the harness re-clones only the skills. So reachability is an **invariant
+re-ensured before each corpus-touching read**, never a boot-once step: discharge
+it with an idempotent guard that no-ops when the corpus already resolves and
+self-heals when a recycle has dropped it.
+
+    # `$EMBER_ORIGIN` is the ember repository the harness already clones skills from
+    [ -e /corpus/README.md ] || {
+      git clone --no-checkout --depth 1 --filter=blob:none "$EMBER_ORIGIN" /opt/tf/corpus-src
+      git -C /opt/tf/corpus-src sparse-checkout set corpus tenant-incident/corpus
+      git -C /opt/tf/corpus-src checkout
+      ln -sfn /opt/tf/corpus-src/corpus /corpus
+      ln -sfn /opt/tf/corpus-src/tenant-incident /tenant-incident
+    }
+
+The sparse set is `corpus/` **plus** `tenant-incident/corpus/`, and it excludes
+`tenant-incident/scenarios/`: the scenario is the environment, not this pass's
+subject, and the sparse set materializes only those two subtrees. The filing this
+pass hands to `corpus-write` re-ensures the same invariant before it writes.
+
+**Do:** re-ensure reachability with the idempotent guard before each corpus read —
+a no-op when `/corpus` resolves, a self-heal when a recycle has dropped it.
+**Don't:** don't provision the corpus once at boot and treat it as durable — the
+idle recycle drops the provisioned corpus while re-cloning the skills, so a
+boot-once step reads an empty `/corpus` on a later turn.
+
 ## What this pass reads
 
 The input is the signal the fast loop deposited: the per-entry dispositions
