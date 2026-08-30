@@ -97,8 +97,10 @@ resolve_token() {
 }
 
 # Read one scalar from the FIRST YAML frontmatter block of a file (CR-tolerant). Keyed
-# on `^<key>:` so `incident:` never matches `incident-class:`. Surrounding quotes are
-# stripped by the caller. Prints nothing when the field (or the frontmatter) is absent.
+# on `^<key>:` so `incident:` never matches `incident-class:`. A quoted scalar is returned
+# as its verbatim between-the-quotes content (any surrounding quotes the caller strips are
+# then a no-op); an unquoted scalar has a trailing inline comment stripped. Prints nothing
+# when the field (or the frontmatter) is absent.
 read_fm() {
   awk -v key="$2" '
     { sub(/\r$/,"") }                 # normalize CRLF on EVERY line before any delimiter check
@@ -108,7 +110,18 @@ read_fm() {
     infm {
       if ($0 ~ ("^" key ":")) {
         val=$0; sub(("^" key ":[ \t]*"),"",val)
-        sub(/[ \t]+#.*/,"",val)         # drop a YAML inline comment (whitespace + # …)
+        # A "#" is a comment ONLY in an unquoted scalar; inside quotes it is data
+        # (YAML 1.2.2 §7.3). For a quoted scalar, take the content up to the matching
+        # close quote verbatim — an embedded "#" survives so the caller safe-id check
+        # rejects a malformed id rather than silently truncating it to a different one.
+        # An unterminated quote leaves val as-is (also rejected). \047 is a single quote.
+        q=substr(val,1,1)
+        if (q=="\"" || q=="\047") {
+          rest=substr(val,2); i=index(rest,q)
+          if (i>0) val=substr(rest,1,i-1)
+        } else {
+          sub(/[ \t]+#.*/,"",val)     # unquoted: drop a YAML inline comment (whitespace + # …)
+        }
         sub(/[ \t]+$/,"",val)
         print val; exit
       }
