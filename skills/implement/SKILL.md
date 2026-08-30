@@ -102,10 +102,11 @@ against the provoking condition is a guess.
 
 The remediation's durable effect reaches the estate only through the human merge:
 the agent proposes, no agent writes to the live surface, and no agent merges its
-own fix (Articles 2 and 3; ADR-0010). The sandbox is disposable — its only durable
-output is the proposal it emits, which leaves the sandbox as a patch the host
-applies and opens as a pull request, the merge the adjudicating write (ADR-0009).
-The in-session approval gates the emit; the merge admits the fix.
+own fix (Articles 2 and 3; ADR-0018). The sandbox is disposable, so the fix leaves
+it as a formatted patch the host applies in an isolated worktree and opens as a
+pull request, the merge the adjudicating write — the same patch-out shape a corpus
+deposit takes (ADR-0009). The in-session approval gates the emit; the merge admits
+the fix.
 
 This proposal is the incident's resolution, not the learning deposit. The fix that
 resolves this incident and the corpus entry a future incident of the class
@@ -113,10 +114,23 @@ consults are two writes with two homes: the `close` skill files the learning
 through `corpus-write`, signed as a corpus deposit with its `Incident-*` trailers;
 the remediation carries no corpus-deposit signature, so an operational fix is never
 read as a learning entry where the delta is read out of git history (Article 12).
+The host path that carries the fix is therefore separate from the one that carries
+a deposit: the deposit helper (`tools/patch-to-pr.sh`) admits only fully-signed
+corpus commits and refuses anything else, and it is not weakened to carry an
+unsigned fix.
+
+**Residue:** the operational-fix host path — the emit, retrieval, host-apply, and
+pull-request-open steps for an unsigned fix — is not yet built; the only host
+helper that exists admits signed corpus deposits alone (ADR-0018 opens this as a
+build follow-up). Until it is, the fix is verified and proposed in the sandbox, and
+the human-side landing is carried out by hand rather than by a helper. This is a
+disclosed floor, not a gap in the gate (Article 8): the merge stays the only
+admitting write whether or not a helper automates the emit.
 
 **Do:** propose the verified fix for the human merge, and hand the session to
 `close` once the fix is filed.
 **Don't:** don't deploy the fix to the live surface or merge it unattended, and
-don't sign the remediation as a corpus deposit — a durable effect that escapes the
-sandbox without the merge has no gate, and an operational fix signed as a deposit
-pollutes the learning delta the deposit signature exists to make readable.
+don't sign the remediation as a corpus deposit or route it through the deposit-only
+helper — a durable effect that escapes the sandbox without the merge has no gate,
+and an operational fix signed as a deposit pollutes the learning delta the deposit
+signature exists to make readable.
