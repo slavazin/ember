@@ -8,8 +8,8 @@ description: The investigation procedure — fan recon across shapes for anchore
 How a session turns a surface under suspicion into an anchored diagnosis it can
 stand behind: it fans recon subagents across investigation shapes to gather
 signals and ground them against the world, commits a diagnosis forecast before any
-probe, and tests every hypothesis in the sandbox. The diagnosis this produces is what a candidate fix is
-filed against, through the `corpus-write` skill.
+probe, and tests every hypothesis in the sandbox. The diagnosis this produces is what the remediation is
+built against, through the `implement` skill.
 
 ## Fan recon across shapes
 
