@@ -155,7 +155,9 @@ function tagExists(tag: string): boolean {
  * or null when the tag is absent and --tag was not passed.
  */
 function resolveCorpusTag(tag: string, create: boolean): string | null {
-  if (tagExists(tag)) return git(['rev-parse', tag]);
+  // Peel to the commit with ^{commit}: a hand-cut ANNOTATED tag resolves to the tag object,
+  // not the commit it points at, and that object SHA must never be recorded as the corpus commit.
+  if (tagExists(tag)) return git(['rev-parse', `${tag}^{commit}`]);
   if (!create) {
     info(`corpus tag ${tag} does not exist — pass --tag to freeze it at the current corpus HEAD, or create it by hand before a real round`);
     return null;
@@ -520,17 +522,16 @@ async function harnessRun(run: PlannedRun, deps: HarnessRunDeps): Promise<RunRes
     return nonMeasured(run, 'blocked', `no incident brief — add tenant-incident/scenarios/${run.scenarioName}/brief.md (the symptom only; the README states the cause and must not be sent). Scenario-authoring work, outside this runner.`);
   }
 
-  // Associate this run with its OWN branch and frozen corpus BEFORE any close/deposit: write a
-  // provenance manifest to the run's own output directory (§3). The directory and branch are
-  // derived uniquely per run, so concurrent runs can never share either. The directory is
-  // RECREATED clean first — a reused --out must never leave a prior run's deposit.patch beside
-  // this run's diagnosis (a patchless rerun would otherwise expose a stale candidate).
   const runOutDir = join(reportOutDir, run.scenarioName, String(run.runIndex));
-  rmSync(runOutDir, { recursive: true, force: true });
-  mkdirSync(runOutDir, { recursive: true });
-  writeFileSync(join(runOutDir, 'run.json'), `${JSON.stringify(buildRunManifest(run, cfg.corpusRef, cfg.corpusCommit), null, 2)}\n`);
 
   try {
+    // Associate this run with its OWN branch and frozen corpus BEFORE any close/deposit: write a
+    // provenance manifest to the run's own output directory (§3). The directory and branch are
+    // derived uniquely per run, so concurrent runs can never share either. Inside the try so an
+    // I/O failure here fails only THIS run, never the whole Promise.all fan-out.
+    mkdirSync(runOutDir, { recursive: true });
+    writeFileSync(join(runOutDir, 'run.json'), `${JSON.stringify(buildRunManifest(run, cfg.corpusRef, cfg.corpusCommit), null, 2)}\n`);
+
     const session = await tfPostJson(cfg.url, '/api/v1/sessions', buildSessionRequest(cfg.agent));
     const sid = readId(session, 'session');
     if (sid === null) return nonMeasured(run, 'error', 'session create returned no id');
@@ -584,6 +585,8 @@ async function harnessRun(run: PlannedRun, deps: HarnessRunDeps): Promise<RunRes
     }
 
     // Persist both artifacts under the run's own directory (created with the manifest above).
+    // Only overwrite once THIS run has produced a terminal report, so an earlier failure never
+    // erases a prior good run's artifacts — the reason no eager whole-directory wipe is done.
     const reportText = await tfGetText(cfg.url, downloadSandboxFilePath(sid, tid, sandboxReport));
     const localReport = join(runOutDir, 'diagnosis.md');
     writeFileSync(localReport, reportText);
@@ -592,14 +595,19 @@ async function harnessRun(run: PlannedRun, deps: HarnessRunDeps): Promise<RunRes
     // adjudicates; keeping only its sandbox path (which the report never renders) would strand
     // it. Its target is the run's OWN branch run/{round}/{scenario}/{n} (§3), applied host-side
     // by the deposit helper at the slow loop. The runner never pushes and never merges (Art. 2).
+    const localPatch = join(runOutDir, 'deposit.patch');
     let depositNote = '';
     if (patchPath !== null) {
       // Byte-for-byte: the patch must apply unchanged with `git am` at the slow loop.
       const patchBytes = await tfGetBytes(cfg.url, downloadSandboxFilePath(sid, tid, patchPath));
-      const localPatch = join(runOutDir, 'deposit.patch');
       writeFileSync(localPatch, patchBytes);
       depositNote = `; deposit candidate persisted to ${relToRepo(localPatch)} (target branch ${run.branch}; applied host-side at the slow loop, never by the runner)`;
       info(`[${run.label}] deposit candidate → ${relToRepo(localPatch)} (branch ${run.branch})`);
+    } else {
+      // This run produced no patch — clear any deposit.patch left by a prior run in a reused
+      // --out so a stale candidate cannot masquerade as this run's. Only reached on a run that
+      // got far enough to emit a report, so it never erases a still-good prior run.
+      rmSync(localPatch, { force: true });
     }
 
     return scoreReportToResult(run, localReport, false, maxSteps, `graded the harness diagnosis report (downloaded from the TrueForge sandbox)${depositNote}`);
