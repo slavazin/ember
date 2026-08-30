@@ -330,12 +330,18 @@ export function parseReportMeta(text: string): ReportMeta {
  * moving head (MULTI-RUN-STRATEGY.md §3). Returns the blockers that stop a real round: a ref
  * of `main`/`HEAD`, or anything not of the `corpus/v{k}` tag form, is not a freeze.
  *
- * NOTE — the LIVE half of P3 is UNVERIFIED without a running TrueForge. Skill registration
- * takes a `ref` that may be a tag (trueforge-harness-verified), but skills register GLOBALLY,
- * not per session, so it is not yet confirmed that a per-session boot reads the corpus AT this
- * tag rather than at each skill's registered ref. This guard asserts the runner's SIDE (the
- * tag exists and is frozen); wiring the boot side to honour ref:<tag> is the remaining TODO,
- * and until it is confirmed live the harness stays behind its RUN_ROUND_HARNESS_WIRED gate.
+ * NOTE — the boot side is now BUILT, but UNVERIFIED without a running TrueForge. TrueForge
+ * v0.1.4 has no per-session env-injection field (trueforge-harness-verified); the only per-round
+ * knob that reaches the sandbox is the skill-registration `ref`, carried in as AGENT_GIT_SKILLS
+ * ({name,url,path,ref} per skill). The corpus-reachability guard in close/corpus-write/consolidate
+ * reads the ember origin and that ref from AGENT_GIT_SKILLS and clones the corpus to match, so a
+ * frozen-tag round is pinned by registering the corpus-facing skills at corpus/v{k}. The
+ * store-index skills (rules/cases/beliefs) need no separate handling: they carry a generated
+ * routing index, not the frozen records, and registering them at the round's ref alongside the
+ * readers clones their embedded indexes at the SAME frozen tag the guard resolves the records at —
+ * index and records move together on one pin. This guard asserts the runner's SIDE (the tag
+ * exists and is frozen); confirming the sandbox honours it end-to-end is the remaining live check,
+ * so the harness stays behind its RUN_ROUND_HARNESS_WIRED gate until a maintainer runs it once.
  */
 export function frozenCorpusRefBlockers(ref: string): string[] {
   if (ref === 'main' || ref === 'HEAD' || ref === '') {
@@ -348,7 +354,11 @@ export function frozenCorpusRefBlockers(ref: string): string[] {
 }
 
 /** The body for `POST /api/v1/sessions`: boot the SAVED agent by name (its model, skills, and
- * bright-data preload are baked into the saved AgentSpec — trueforge-harness-verified). */
+ * bright-data preload are baked into the saved AgentSpec — trueforge-harness-verified). The
+ * round's corpus ref is NOT threaded here: v0.1.4 exposes no per-session env-injection field, so
+ * the frozen-tag boot is pinned upstream by registering the corpus-reading skills at the round's
+ * corpus/v{k} ref (the guard mirrors it via AGENT_GIT_SKILLS — see frozenCorpusRefBlockers), a
+ * between-rounds operator step, not a field on this request. */
 export function buildSessionRequest(agent: string): { agent: { name: string } } {
   return { agent: { name: agent } };
 }

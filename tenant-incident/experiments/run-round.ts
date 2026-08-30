@@ -360,7 +360,7 @@ function localRun(run: PlannedRun, reportsDir: string | null, maxSteps: number |
 const PREREQUISITES = [
   'P1 (SF-1) self-driving runs: the inspector must not pause to ask the human which shape to run or whether to finish — invariant framing in investigate/close, or ask_user_question disabled. Without P1 there is no unattended fan-out.',
   'P2 (SF-8) tenant incident/case store under tenant-incident/corpus/: deposits currently land in the layer store; a round without P2 grows the wrong tree.',
-  'P3 corpus tagging: confirm ref:<tag> (not only ref:main) boots a frozen corpus, so a round pins a version rather than the moving head.',
+  'P3 frozen-corpus boot: a round must boot a frozen corpus/v{k}, not the moving head. Built — the corpus-reachability guard (close/corpus-write/consolidate) pins its clone to the ref carried in AGENT_GIT_SKILLS, so registering the corpus-facing skills (the readers plus the rules/cases/beliefs store indexes) at corpus/v{k} boots that frozen corpus — records and embedded indexes on one pin. v0.1.4 has no per-session env-injection field, so the pin is a between-rounds skill-registration step, not a session-request field; confirming the sandbox honours it end-to-end is the remaining live check.',
   'P4 close-output contract: the close skill must record each entry\'s close disposition and the forecast outcome as `disposition:`/`forecast_hit:` in the run report frontmatter — the runner\'s machine-readable interface (parseReportMeta). Until the skill writes them, the applied/cna/fired_off_map and forecast_hit columns read empty even on real runs.',
 ];
 
@@ -404,7 +404,8 @@ function harnessPreflight(cli: Cli, corpusTag: string, corpusCommit: string | nu
 
   // P3 (frozen boot): the round must pin a frozen corpus/v{k} tag, and that tag must resolve
   // to a commit (a --tag freeze or a hand-cut tag). The RUNNER side is asserted here; the boot
-  // side honouring ref:<tag> is still the unverified TODO (see frozenCorpusRefBlockers).
+  // side is BUILT (the corpus guard pins its clone to the AGENT_GIT_SKILLS ref — see
+  // frozenCorpusRefBlockers) but not yet verified live, so the WIRED gate below still stands.
   blockers.push(...frozenCorpusRefBlockers(corpusTag));
   if (corpusCommit === null) blockers.push(`P3: corpus tag ${corpusTag} does not resolve to a commit — freeze it first (--tag) or cut it by hand before a real round`);
 
@@ -413,8 +414,9 @@ function harnessPreflight(cli: Cli, corpusTag: string, corpusCommit: string | nu
   // confirmed on the runner side. Rather than pass preflight before a live shake-out, the gate
   // stays until a maintainer has run it once and confirmed the path. Specifically deferred to
   // that live check, and the reason the gate stands:
-  //   - the boot HONOURS ref:<tag> so measurements are corpus-pinned (P3) — the session
-  //     request cannot yet transmit/verify the ref, so a run could read an unpinned corpus;
+  //   - the boot HONOURS ref:<tag> so measurements are corpus-pinned (P3) — the guard now pins
+  //     its clone to the AGENT_GIT_SKILLS ref, but that the sandbox actually resolves the frozen
+  //     corpus at it has not been observed live, so a run could still read an unpinned corpus;
   //   - the saved agent's EFFECTIVE model is openai/* (TRUEFORGE_MODEL only asserts it, ISS-003);
   //   - the close writes disposition/forecast_hit as the machine-readable P4 frontmatter;
   //   - the per-scenario incident brief and the artifact/patch download path resolve.

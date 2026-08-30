@@ -25,13 +25,25 @@ re-ensured before each corpus-touching read**, never a boot-once step: discharge
 with an idempotent guard that no-ops when the corpus already resolves and self-heals
 when a recycle has dropped it.
 
-    # `$EMBER_ORIGIN` is the ember repository the harness already clones skills from.
-    # Clone into a scratch path and swap it in only once the checkout succeeds, so an
-    # interrupted prior run cannot leave a partial tree that blocks the retry or a
-    # half-provisioned /corpus; every step is chained, so a failure publishes no links.
-    [ -e /corpus/README.md ] || {
+    # The harness clones each registered skill into this sandbox and passes AGENT_GIT_SKILLS —
+    # a base64 JSON list of {name,url,path,ref}, one per skill, every one from the ember repo at
+    # the ref the round registered it at. Read the ember origin URL and that ref from it, so the
+    # corpus resolves at the SAME ref as the skill reading it: a frozen-tag round pins the corpus
+    # by registering the corpus skills at corpus/v{k}, and the clone mirrors that ref instead of
+    # tracking the moving head. EMBER_CORPUS_REF (the ref) or EMBER_ORIGIN (the URL) override when
+    # set; the ref falls back to main. Clone into a scratch path and swap it in only once the
+    # checkout succeeds, so an interrupted prior run leaves no partial /corpus behind; every step
+    # is chained, so a failure publishes no links.
+    # The guard tests BOTH published roots — /corpus and the tenant /tenant-incident/corpus —
+    # so a partial provisioning (one link present, the other dropped or never made) re-heals
+    # instead of reading as done and failing the tenant read.
+    { [ -e /corpus/README.md ] && [ -e /tenant-incident/corpus/README.md ]; } || {
+      _tf_skills=$(printf %s "${AGENT_GIT_SKILLS:-}" | base64 -d 2>/dev/null || printf '[]') &&
+      _tf_origin="${EMBER_ORIGIN:-$(printf %s "$_tf_skills" | jq -r '[.[].url] | map(select(. != null))[0] // empty')}" &&
+      _tf_ref="${EMBER_CORPUS_REF:-$(printf %s "$_tf_skills" | jq -r '[.[].ref] | map(select(. != null))[0] // empty')}" &&
+      _tf_ref="${_tf_ref:-main}" &&
       rm -rf /opt/tf/corpus-src.tmp &&
-      git clone --no-checkout --depth 1 --filter=blob:none "$EMBER_ORIGIN" /opt/tf/corpus-src.tmp &&
+      git clone --no-checkout --depth 1 --filter=blob:none --branch "$_tf_ref" "$_tf_origin" /opt/tf/corpus-src.tmp &&
       git -C /opt/tf/corpus-src.tmp sparse-checkout set corpus tenant-incident/corpus &&
       git -C /opt/tf/corpus-src.tmp checkout &&
       rm -rf /opt/tf/corpus-src && mv /opt/tf/corpus-src.tmp /opt/tf/corpus-src &&
@@ -47,7 +59,7 @@ only those two subtrees, so `/tenant-incident/scenarios` never resolves. This
 mirrors the harness's own per-sandbox skill self-heal.
 
 **Do:** re-ensure reachability with the idempotent guard before each corpus read —
-a no-op when `/corpus` resolves, a self-heal when a recycle has dropped it.
+a no-op when both corpus roots resolve, a self-heal when a recycle has dropped it.
 **Don't:** don't provision the corpus once at boot and treat it as durable — the
 idle recycle drops the provisioned corpus while re-cloning the skills, so a
 boot-once step reads an empty `/corpus` on a later turn.
@@ -55,6 +67,14 @@ boot-once step reads an empty `/corpus` on a later turn.
 **Do:** keep the sparse set scoped to `corpus/` plus `tenant-incident/corpus/`.
 **Don't:** don't widen the sparse set to `tenant-incident/scenarios/` — pulling the
 scenario into the agent's reach contaminates the diagnosis with the answer.
+
+**Do:** let the round pin the corpus by registering the corpus skills at its
+`corpus/v{k}` ref — the guard reads that ref from `AGENT_GIT_SKILLS` and clones the
+corpus to match, so the store indexes the boot consults are the ones the frozen tag
+holds.
+**Don't:** don't pin the clone to `main` — a frozen-tag round would then read the
+moving head, and a baseline round and a later round would see one corpus, collapsing
+the frozen delta the round exists to measure.
 
 ## Boot
 
