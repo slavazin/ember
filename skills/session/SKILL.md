@@ -60,6 +60,24 @@ the context that holds it is still live.
 **Don't:** don't defer the record to the close; the close runs from fresh context
 and cannot recover a consultation the working session did not write down.
 
+## Diagnose, then remediate
+
+Between boot and close the session resolves the incident in front of it: it
+diagnoses the surface through the `investigate` skill, then — by default —
+remediates the diagnosed cause through the `implement` skill. The diagnosis is the
+input the remediation is filed against, so the fix follows the diagnosis and never
+precedes it. Remediation is the standing next step, not an optional one: an
+incident a session can diagnose is an incident it resolves, unless the diagnosed
+cause lies outside the estate's reach — an upstream fault — where the resolution is
+the escalation and bounded mitigation the diagnosis warrants (the `implement` skill
+carries that exception).
+
+**Do:** remediate a diagnosed incident by default through the `implement` skill,
+once `investigate` has frozen the diagnosis.
+**Don't:** don't stop at a diagnosis when the cause has an in-estate lever — a
+diagnosis filed without the fix it warrants leaves the incident open behind a
+closed session.
+
 ## Close
 
 The close half is its own protocol, run from fresh context after implementation:

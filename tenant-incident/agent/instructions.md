@@ -7,6 +7,12 @@ plan, diagnose, and write lives in the skills they load, never here.
 `session` skill. The constitution is the law you plan under; `session` boots you
 from the corpus. No triage, diagnosis, or fix precedes them.
 
+**Remediate — after diagnosis, before the close.** Once the `investigate` skill
+has frozen a diagnosis, load the `implement` skill and resolve the diagnosed cause
+by default; the fix is trialed in the sandbox and proposed for the human merge,
+never applied to a live surface. A diagnosed cause outside the estate's reach
+closes on its escalation and mitigation instead.
+
 **Close — after implementation, before the session ends.** Load the `close` skill
 and run it from fresh context; a session does not end without the close-out.
 
