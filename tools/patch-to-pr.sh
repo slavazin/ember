@@ -361,14 +361,52 @@ if [ "$PUSH" = "--push" ]; then
     echo "✗ failed to query existing pull requests for $BRANCH — not filing, to avoid a duplicate (surface to human)" >&2
     exit 3
   fi
+  # Resolve the PR URL from whichever path applies — the already-open filing or a fresh
+  # create — so the post-close gate below can address it by number in either case.
   if [ -n "$EXISTING_PR" ]; then
     echo "→ corpus-deposit pull request already open for $BRANCH: $EXISTING_PR"
+    PR_URL="$EXISTING_PR"
   else
     # If a same-name PR exists but is not the corpus-deposit filing (wrong base/label), the
     # create below fails loudly ("a pull request already exists") — an actionable error, not
-    # a silent skip.
-    GH_TOKEN="$TOKEN" gh pr create --repo slavazin/ember --head "$BRANCH" --base main \
-      --label "$LABEL" --title "$TITLE" --body-file "$BODY_FILE"
+    # a silent skip. Capture the new PR's URL so the post-close gate can address it by
+    # number; still echo it for the operator. `gh pr create` prints the URL on stdout.
+    PR_URL="$(GH_TOKEN="$TOKEN" gh pr create --repo slavazin/ember --head "$BRANCH" --base main \
+      --label "$LABEL" --title "$TITLE" --body-file "$BODY_FILE")"
+    echo "$PR_URL"
+  fi
+  PR_NUMBER="${PR_URL##*/}"
+
+  # Post-close Qodo severity gate (ADR-0017), OFF unless QODO_GATE=on. It runs HERE on
+  # the host — never in the sandbox — because it authenticates outward (the gh token and
+  # the TrueForge session API), which the sandbox cannot (ADR-0009). It is advisory: the
+  # PR is already open, the gate only re-reviews and may spawn a bounded remediation
+  # session, and it never merges (Art. 2 & 10). A non-zero gate result does NOT undo the
+  # PR and does NOT fail this helper — the deposit stands; the gate's own output is the
+  # human-facing signal. With QODO_GATE unset/off this whole block is a clean no-op.
+  if [ "${QODO_GATE:-}" = "on" ]; then
+    case "$PR_NUMBER" in
+      ''|*[!0-9]*)
+        echo "⚠ QODO_GATE=on but no numeric PR number parsed from '$PR_URL' — skipping the gate; PR stands." >&2
+        ;;
+      *)
+        echo "→ QODO_GATE=on: running the post-close Qodo severity gate on PR #$PR_NUMBER (host-side, advisory)…"
+        # Run from the repo root so `npm run` resolves this repo's package.json and the
+        # tool's relative path; the subshell keeps this helper's cwd unchanged. `if !`
+        # captures a non-zero exit (High findings remain, or inconclusive) without
+        # letting `set -e` abort — the PR must stand regardless of the verdict.
+        #
+        # Hand the gate the SAME resolved token these gh calls used, as an env var on the
+        # child (the `ps`-safe form the rest of this script uses, never a CLI arg). TOKEN
+        # is a non-exported shell var, so without this the gate's own `gh` calls would run
+        # unauthenticated whenever the token came from the Keychain fallback (no ambient
+        # GH_TOKEN) and stall at its first `gh pr view`. The gate reaches TrueForge over a
+        # separate channel; this only auths its gh side.
+        if ! ( cd "$REPO_ROOT" && GH_TOKEN="$TOKEN" npm run qodo-gate -- --pr="$PR_NUMBER" ); then
+          echo "⚠ qodo-gate exited non-zero (High findings remain or inconclusive) — PR #$PR_NUMBER stands; surface to human." >&2
+        fi
+        ;;
+    esac
   fi
 else
   echo ""

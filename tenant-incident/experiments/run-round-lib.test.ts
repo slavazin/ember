@@ -17,10 +17,20 @@ import {
   quantile,
   renderLedgerRows,
   renderRoundReport,
+  frozenCorpusRefBlockers,
+  buildSessionRequest,
+  buildTurnRequest,
+  buildRunManifest,
+  downloadSandboxFilePath,
+  interpretTurnState,
+  buildApprovalResume,
+  parseSandboxArtifacts,
+  selectRunArtifacts,
   LEDGER_COLUMNS,
   type RoundSpec,
   type RunResult,
   type PlannedRun,
+  type RequiredAction,
 } from './run-round-lib.ts';
 
 const GOOD_SPEC = `
@@ -317,6 +327,147 @@ test('LEDGER_COLUMNS matches the §6 schema order', () => {
     'steps_median', 'steps_IQR', 'grade_pass', 'forecast_hit',
     'applied[]', 'cna[]', 'fired_off_map[]', 'false_fire[]',
   ]);
+});
+
+// ── Harness fan-out: the pure TrueForge-REST core ──
+
+test('frozenCorpusRefBlockers accepts a corpus/v{k} tag and rejects the moving head', () => {
+  assert.deepEqual(frozenCorpusRefBlockers('corpus/v0'), []);
+  assert.deepEqual(frozenCorpusRefBlockers('corpus/v12'), []);
+  assert.ok(frozenCorpusRefBlockers('main').some((b) => b.includes('P3') && b.includes('moving head')));
+  assert.ok(frozenCorpusRefBlockers('HEAD').some((b) => b.includes('moving head')));
+  assert.ok(frozenCorpusRefBlockers('').some((b) => b.includes('moving head')));
+  assert.ok(frozenCorpusRefBlockers('corpus/latest').some((b) => b.includes('not a corpus/v{k} tag')));
+  assert.ok(frozenCorpusRefBlockers('v0').some((b) => b.includes('not a corpus/v{k} tag')));
+});
+
+test('buildSessionRequest boots the saved agent by name', () => {
+  assert.deepEqual(buildSessionRequest('incident-responder'), { agent: { name: 'incident-responder' } });
+});
+
+test('buildTurnRequest wraps the brief as a non-streaming user.message', () => {
+  assert.deepEqual(buildTurnRequest('orders is 504ing'), {
+    stream: false,
+    input: [{ type: 'user.message', content: 'orders is 504ing' }],
+  });
+});
+
+test('buildRunManifest records the run branch and frozen corpus for deposit provenance', () => {
+  const { spec } = parseRoundSpec(GOOD_SPEC);
+  const run = expandRuns(spec!)[2]!; // pool-exhaustion-a#3
+  const m = buildRunManifest(run, 'corpus/v0', 'abc123');
+  assert.equal(m.label, 'pool-exhaustion-a#3');
+  assert.equal(m.branch, 'run/0/pool-exhaustion-a/3');
+  assert.equal(m.corpus_tag, 'corpus/v0');
+  assert.equal(m.corpus_commit, 'abc123');
+  assert.equal(m.run_index, 3);
+  // A null commit (declared-but-unresolved tag) is preserved, not coerced.
+  assert.equal(buildRunManifest(run, 'corpus/v0', null).corpus_commit, null);
+});
+
+test('downloadSandboxFilePath query-encodes the absolute artifact path', () => {
+  assert.equal(
+    downloadSandboxFilePath('s1', 't2', '/opt/tf/out/0001-deposit.patch'),
+    '/api/v1/sessions/s1/turns/t2/download-sandbox-file?path=%2Fopt%2Ftf%2Fout%2F0001-deposit.patch',
+  );
+});
+
+test('interpretTurnState reads a done turn with output content', () => {
+  const turn = { state: { status: 'done', output: { content: 'the report ```sandbox_artifacts```' } } };
+  const disp = interpretTurnState(turn);
+  assert.equal(disp.kind, 'done');
+  if (disp.kind === 'done') assert.match(disp.content, /report/);
+});
+
+test('interpretTurnState reads a pending action BEFORE done (a gated turn reports done)', () => {
+  // trueforge-harness-verified: a gated pause reports status:done WITH required_actions and a
+  // null output — the pending action must win over the done status.
+  const turn = {
+    state: {
+      status: 'done',
+      output: null,
+      required_actions: [
+        { type: 'tool.approval_required', thread_id: 'th_1', tool_calls: [{ id: 'call_a' }, { id: 'call_b' }] },
+      ],
+    },
+  };
+  const disp = interpretTurnState(turn);
+  assert.equal(disp.kind, 'action-required');
+  if (disp.kind === 'action-required') {
+    assert.equal(disp.actions[0]!.type, 'tool.approval_required');
+    assert.deepEqual(disp.actions[0]!.tool_call_ids, ['call_a', 'call_b']);
+    assert.equal(disp.actions[0]!.thread_id, 'th_1');
+  }
+});
+
+test('interpretTurnState maps a failed status, and done-without-content, to failed', () => {
+  assert.equal(interpretTurnState({ state: { status: 'error', error: { message: 'boom' } } }).kind, 'failed');
+  const noContent = interpretTurnState({ state: { status: 'done', output: { content: '' } } });
+  assert.equal(noContent.kind, 'failed');
+  assert.equal(interpretTurnState({ state: { status: 'running' } }).kind, 'running');
+  assert.equal(interpretTurnState('not an object').kind, 'failed');
+});
+
+test('interpretTurnState accepts a bare state object as well as a wrapped turn', () => {
+  assert.equal(interpretTurnState({ status: 'running' }).kind, 'running');
+});
+
+test('buildApprovalResume resolves each tool_call under one policy', () => {
+  const actions: RequiredAction[] = [
+    { type: 'tool.approval_required', thread_id: 'th_1', tool_call_ids: ['a', 'b'] },
+  ];
+  const plan = buildApprovalResume(actions, 'allow', 'why');
+  assert.deepEqual(plan.unhandledTypes, []);
+  assert.equal(plan.input.length, 2);
+  assert.deepEqual(plan.input[0], {
+    type: 'user.tool_approval',
+    thread_id: 'th_1',
+    tool_call_id: 'a',
+    approval: { status: 'allow', reason: 'why' },
+  });
+});
+
+test('buildApprovalResume surfaces an unhandled action type instead of guessing its resume', () => {
+  const actions: RequiredAction[] = [
+    { type: 'tool.approval_required', thread_id: 'th_1', tool_call_ids: ['a'] },
+    { type: 'tool.response_required', thread_id: 'th_2', tool_call_ids: ['c'] },
+  ];
+  const plan = buildApprovalResume(actions, 'deny', 'no');
+  assert.equal(plan.input.length, 1); // only the approval action resolved
+  assert.deepEqual(plan.unhandledTypes, ['tool.response_required']);
+});
+
+test('parseSandboxArtifacts extracts absolute-path links from the fenced block', () => {
+  const content = [
+    'Here is the diagnosis and the deposit candidate.',
+    '',
+    '```sandbox_artifacts',
+    '[diagnosis report](/opt/tf/out/diagnosis.md)',
+    '[format patch](/opt/tf/out/0001-deposit.patch)',
+    '```',
+    '',
+    'A stray [external](https://example.com) link is not an artifact.',
+  ].join('\n');
+  const arts = parseSandboxArtifacts(content);
+  assert.equal(arts.length, 2);
+  assert.deepEqual(arts[0], { label: 'diagnosis report', path: '/opt/tf/out/diagnosis.md' });
+  assert.equal(arts[1]!.path, '/opt/tf/out/0001-deposit.patch');
+});
+
+test('parseSandboxArtifacts returns nothing when no fenced block is present', () => {
+  assert.deepEqual(parseSandboxArtifacts('[report](/abs/x.md) but no fence'), []);
+});
+
+test('selectRunArtifacts picks the .md report and the .patch deposit candidate', () => {
+  const sel = selectRunArtifacts([
+    { label: 'patch', path: '/o/0001-deposit.patch' },
+    { label: 'report', path: '/o/diagnosis.md' },
+  ]);
+  assert.equal(sel.reportPath, '/o/diagnosis.md');
+  assert.equal(sel.patchPath, '/o/0001-deposit.patch');
+  const none = selectRunArtifacts([{ label: 'log', path: '/o/run.log' }]);
+  assert.equal(none.reportPath, null);
+  assert.equal(none.patchPath, null);
 });
 
 test('renderRoundReport always states the human gate and never instructs a merge', () => {

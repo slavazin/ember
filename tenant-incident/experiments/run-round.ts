@@ -26,7 +26,8 @@
 // Prose follows /corpus/LANGUAGE.md.
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync, existsSync, writeFileSync, mkdirSync, appendFileSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, appendFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -40,10 +41,20 @@ import {
   measuredLedgerRows,
   renderRoundReport,
   renderLedgerRows,
+  frozenCorpusRefBlockers,
+  buildSessionRequest,
+  buildTurnRequest,
+  buildRunManifest,
+  downloadSandboxFilePath,
+  interpretTurnState,
+  buildApprovalResume,
+  parseSandboxArtifacts,
+  selectRunArtifacts,
   LEDGER_HEADER,
   LEDGER_SEPARATOR,
   type PlannedRun,
   type RunResult,
+  type ApprovalStatus,
 } from './run-round-lib.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -144,7 +155,24 @@ function tagExists(tag: string): boolean {
  * or null when the tag is absent and --tag was not passed.
  */
 function resolveCorpusTag(tag: string, create: boolean): string | null {
-  if (tagExists(tag)) return git(['rev-parse', tag]);
+  // Peel to the commit with ^{commit}: a hand-cut ANNOTATED tag resolves to the tag object,
+  // not the commit it points at, and that object SHA must never be recorded as the corpus commit.
+  // tagExists only proves the ref exists — a tag targeting a tree/blob does NOT peel. Use
+  // --verify --quiet so a non-peelable ref exits with status 1 specifically; ONLY that clean
+  // exit-1 is treated as unresolved (→ the preflight blocker). Any OTHER git failure
+  // (git-not-found → ENOENT/no status, bad/corrupt repo → 128) is rethrown, never masked as an
+  // ordinary unresolved tag.
+  if (tagExists(tag)) {
+    try {
+      return git(['rev-parse', '--verify', '--quiet', `${tag}^{commit}`]);
+    } catch (e) {
+      if ((e as { status?: number }).status === 1) {
+        info(`corpus tag ${tag} exists but does not peel to a commit (targets a tree/blob) — treated as unresolved`);
+        return null;
+      }
+      throw e;
+    }
+  }
   if (!create) {
     info(`corpus tag ${tag} does not exist — pass --tag to freeze it at the current corpus HEAD, or create it by hand before a real round`);
     return null;
@@ -237,6 +265,48 @@ function nonMeasured(run: PlannedRun, status: 'blocked' | 'error', note: string)
   };
 }
 
+/**
+ * Grade one diagnosis report and fold it (with its P4 frontmatter) into a graded RunResult.
+ * Shared by local and harness modes so both read the score and the close-output contract
+ * (steps/disposition/forecast_hit) through the SAME path. Returns a nonMeasured error when
+ * grade.sh prints no SCORE line — a grader interrupted or malformed, never a real measurement.
+ * May throw if the report file cannot be read; the caller owns any cleanup on that.
+ */
+function scoreReportToResult(
+  run: PlannedRun,
+  reportPath: string,
+  isFixture: boolean,
+  maxSteps: number | null,
+  sourceNote: string,
+): RunResult {
+  const gradeArgs = maxSteps === null ? [reportPath] : [reportPath, '--max-steps', String(maxSteps)];
+  const result = runScript(run.scenarioName, 'grade.sh', gradeArgs);
+  const score = parseScore(result.stdout);
+  // A normal gate failure still prints a SCORE line before exiting non-zero (scenarios
+  // README), so an ABSENT SCORE line means the grader was interrupted or malformed — an
+  // operational error, not a measurement.
+  if (score === null) {
+    return nonMeasured(run, 'error', `grade.sh printed no SCORE line (exit ${result.code}) — grader interrupted or malformed; run excluded from measurement`);
+  }
+  // disposition/forecast_hit are the P4 close-output contract — the pre-registered machine
+  // interface the close skill writes into the report frontmatter (MULTI-RUN-STRATEGY §7 P4).
+  // When the skill has NOT written them (P4 unhonoured), both read null and the ledger folds
+  // them as empty — missing telemetry stays OUT of measurement rather than being invented.
+  const meta = parseReportMeta(readFileSync(reportPath, 'utf8'));
+  return {
+    run,
+    status: 'graded',
+    steps: score.steps ?? meta.steps ?? null,
+    gradePass: result.code === 0,
+    gates: score.gates,
+    disposition: meta.disposition ?? null,
+    forecastHit: meta.forecast_hit ?? null,
+    reportPath,
+    reportIsFixture: isFixture,
+    note: sourceNote,
+  };
+}
+
 function localRun(run: PlannedRun, reportsDir: string | null, maxSteps: number | null): RunResult {
   if (!scenarioExists(run.scenarioName)) {
     return nonMeasured(run, 'blocked', 'scenario not built (battery expansion pending, §7 artifact 1)');
@@ -259,32 +329,15 @@ function localRun(run: PlannedRun, reportsDir: string | null, maxSteps: number |
 
   let graded: RunResult;
   try {
-    const gradeArgs = maxSteps === null ? [report.path] : [report.path, '--max-steps', String(maxSteps)];
-    const result = runScript(run.scenarioName, 'grade.sh', gradeArgs);
-    const score = parseScore(result.stdout);
-    // A normal gate failure still prints a SCORE line before exiting non-zero (scenarios
-    // README), so an ABSENT SCORE line means the grader was interrupted or malformed — an
-    // operational error, not a measurement. Reject it rather than fold a run with no gates
-    // and a fabricated-looking step count into the ledger.
-    if (score === null) {
+    const source = report.isFixture ? 'graded the scenario fixture (stand-in — not a real run)' : 'graded a run report';
+    graded = scoreReportToResult(run, report.path, report.isFixture, maxSteps, source);
+    // No SCORE line — reject rather than fold a run with no gates and a fabricated-looking
+    // step count into the ledger. Reset still runs so the environment is restored.
+    if (graded.status === 'error') {
       info(`[${run.label}] reset (after malformed grade)`);
       runScript(run.scenarioName, 'reset.sh');
-      return nonMeasured(run, 'error', `grade.sh printed no SCORE line (exit ${result.code}) — grader interrupted or malformed; run excluded from measurement`);
+      return graded;
     }
-    const meta = parseReportMeta(readFileSync(report.path, 'utf8'));
-    const source = report.isFixture ? 'graded the scenario fixture (stand-in — not a real run)' : 'graded a run report';
-    graded = {
-      run,
-      status: 'graded',
-      steps: score.steps ?? meta.steps ?? null,
-      gradePass: result.code === 0,
-      gates: score.gates,
-      disposition: meta.disposition ?? null,
-      forecastHit: meta.forecast_hit ?? null,
-      reportPath: report.path,
-      reportIsFixture: report.isFixture,
-      note: source,
-    };
   } catch (e) {
     info(`[${run.label}] reset (after grade error)`);
     runScript(run.scenarioName, 'reset.sh');
@@ -315,57 +368,267 @@ interface HarnessConfig {
   url: string;
   model: string;
   agent: string;
+  corpusRef: string; // the frozen corpus/v{k} tag this round boots (§3, P3)
+  corpusCommit: string | null; // the commit that tag resolves to, recorded in each run manifest
+  approvalPolicy: ApprovalStatus;
 }
 
+// Harness HTTP/poll tunables (env-overridable for a slow server). A bounded poll keeps a
+// wedged turn from hanging the round; a per-request timeout keeps a stalled fetch from doing
+// the same. Defaults: 60s per request, 3s between polls, 200 polls (~10 min per run).
+const HARNESS_HTTP_TIMEOUT_MS = Number(process.env.RUN_ROUND_HARNESS_HTTP_TIMEOUT_MS ?? '') || 60_000;
+const HARNESS_POLL_INTERVAL_MS = Number(process.env.RUN_ROUND_HARNESS_POLL_INTERVAL_MS ?? '') || 3_000;
+const HARNESS_MAX_POLLS = Number(process.env.RUN_ROUND_HARNESS_MAX_POLLS ?? '') || 200;
+
 /**
- * Preflight the harness mode. Returns a config only when the prerequisites are asserted and
- * the environment is OpenAI-only (ISS-003); otherwise it prints what blocks a real round and
- * returns null. This is the gate that keeps an untrusted round from running (§7 prerequisites).
+ * Preflight the harness mode. Returns a config only when the prerequisites are asserted, the
+ * environment is OpenAI-only (ISS-003), and the corpus tag is a resolvable FROZEN ref (P3);
+ * otherwise it prints what blocks a real round and returns null. This is the gate that keeps
+ * an untrusted round from running (§7 prerequisites).
  */
-function harnessPreflight(cli: Cli): HarnessConfig | null {
+function harnessPreflight(cli: Cli, corpusTag: string, corpusCommit: string | null): HarnessConfig | null {
   const url = process.env.TRUEFORGE_URL ?? '';
   const model = process.env.TRUEFORGE_MODEL ?? '';
   const agent = process.env.TRUEFORGE_AGENT ?? 'incident-responder';
+  const rawPolicy = process.env.RUN_ROUND_APPROVAL_POLICY ?? 'allow';
   const blockers: string[] = [];
   if (!cli.prereqsConfirmed) blockers.push('P1/P2/P3/P4 are not asserted — re-run with --prereqs-confirmed once they hold (see the prerequisite list)');
   if (url === '') blockers.push('TRUEFORGE_URL is unset (e.g. http://127.0.0.1:8790)');
+  // TRUEFORGE_MODEL ASSERTS the saved agent's model; it does not CONTROL it (a saved agent is
+  // booted by name, model baked into its AgentSpec). This checks the operator's asserted value
+  // is the proven OpenAI path; the agent's EFFECTIVE model is verified live before the gate
+  // lifts (see the RUN_ROUND_HARNESS_WIRED blocker).
   if (model === '') blockers.push('TRUEFORGE_MODEL is unset');
   else if (!model.startsWith('openai/')) blockers.push(`TRUEFORGE_MODEL is ${model} — only openai/* is a proven path (ISS-003; Anthropic identity-linked keys fail)`);
-  // The live fan-out (session/turn/poll/artifact-grade over the TrueForge REST API) is not
-  // wired yet: it depends on contracts that do not exist (P2 tenant store, P4 close-output,
-  // the per-scenario incident brief and artifact-retrieval path) and cannot be verified here
-  // against a live server. Rather than pass preflight and then no-op, harness mode blocks on
-  // this until the path is built AND verified — set RUN_ROUND_HARNESS_WIRED=1 only then.
+  if (rawPolicy !== 'allow' && rawPolicy !== 'deny') blockers.push(`RUN_ROUND_APPROVAL_POLICY is ${JSON.stringify(rawPolicy)} — must be allow or deny`);
+
+  // P3 (frozen boot): the round must pin a frozen corpus/v{k} tag, and that tag must resolve
+  // to a commit (a --tag freeze or a hand-cut tag). The RUNNER side is asserted here; the boot
+  // side honouring ref:<tag> is still the unverified TODO (see frozenCorpusRefBlockers).
+  blockers.push(...frozenCorpusRefBlockers(corpusTag));
+  if (corpusCommit === null) blockers.push(`P3: corpus tag ${corpusTag} does not resolve to a commit — freeze it first (--tag) or cut it by hand before a real round`);
+
+  // The live TrueForge fan-out is now BUILT (harnessRun below), but it has not been verified
+  // end-to-end against a running server, and it still leans on contracts that are only
+  // confirmed on the runner side. Rather than pass preflight before a live shake-out, the gate
+  // stays until a maintainer has run it once and confirmed the path. Specifically deferred to
+  // that live check, and the reason the gate stands:
+  //   - the boot HONOURS ref:<tag> so measurements are corpus-pinned (P3) — the session
+  //     request cannot yet transmit/verify the ref, so a run could read an unpinned corpus;
+  //   - the saved agent's EFFECTIVE model is openai/* (TRUEFORGE_MODEL only asserts it, ISS-003);
+  //   - the close writes disposition/forecast_hit as the machine-readable P4 frontmatter;
+  //   - the per-scenario incident brief and the artifact/patch download path resolve.
+  // While the gate stands, NO real run executes, so none of the above can produce a false
+  // measurement — set RUN_ROUND_HARNESS_WIRED=1 only after each is confirmed live.
   if (process.env.RUN_ROUND_HARNESS_WIRED !== '1') {
-    blockers.push('the live TrueForge fan-out is not wired yet — it lands with P1/P2/P3/P4 and a confirmed server; the maintainer sets RUN_ROUND_HARNESS_WIRED=1 once harnessRun is built and verified end-to-end');
+    blockers.push('the live TrueForge fan-out is built but not yet verified end-to-end — deferred live checks: boot honours ref:<tag> (P3, corpus-pinned), the saved agent\'s effective model is openai/* (ISS-003), the P4 close-output frontmatter, and the brief/artifact path. Set RUN_ROUND_HARNESS_WIRED=1 only after a maintainer confirms these against a running server');
   }
   if (blockers.length > 0) {
     info('harness mode is blocked — a real round cannot run until:');
     for (const b of blockers) info(`  - ${b}`);
     return null;
   }
-  return { url, model, agent };
+  return { url, model, agent, corpusRef: corpusTag, corpusCommit, approvalPolicy: rawPolicy as ApprovalStatus };
+}
+
+// ── harness HTTP (only reached past a green preflight) ──
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+async function tfFetch(url: string, init?: RequestInit): Promise<Response> {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), HARNESS_HTTP_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: ctl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function tfPostJson(base: string, path: string, body: unknown): Promise<unknown> {
+  const res = await tfFetch(`${base}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`POST ${path} → ${res.status} ${res.statusText}: ${text.slice(0, 300)}`);
+  return text === '' ? {} : JSON.parse(text);
+}
+
+async function tfGetJson(base: string, path: string): Promise<unknown> {
+  const res = await tfFetch(`${base}${path}`);
+  const text = await res.text();
+  if (!res.ok) throw new Error(`GET ${path} → ${res.status} ${res.statusText}: ${text.slice(0, 300)}`);
+  return text === '' ? {} : JSON.parse(text);
+}
+
+async function tfGetText(base: string, path: string): Promise<string> {
+  const res = await tfFetch(`${base}${path}`);
+  const text = await res.text();
+  if (!res.ok) throw new Error(`GET ${path} → ${res.status} ${res.statusText}: ${text.slice(0, 300)}`);
+  return text;
+}
+
+// Bytes, not text: a git format-patch must be persisted byte-for-byte so `git am` applies it
+// unchanged. Response.text() always UTF-8-decodes, which would silently rewrite any non-UTF-8
+// byte — so the patch is fetched through arrayBuffer instead.
+async function tfGetBytes(base: string, path: string): Promise<Buffer> {
+  const res = await tfFetch(`${base}${path}`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`GET ${path} → ${res.status} ${res.statusText}: ${text.slice(0, 300)}`);
+  }
+  return Buffer.from(await res.arrayBuffer());
+}
+
+// The TF create-session / create-turn responses carry an id; be tolerant of a top-level id or
+// a nested {session|turn}.id wrapper (the exact envelope is confirmed live before enabling).
+function readId(obj: unknown, ...nestKeys: string[]): string | null {
+  if (!obj || typeof obj !== 'object') return null;
+  const rec = obj as Record<string, unknown>;
+  if (typeof rec.id === 'string') return rec.id;
+  for (const k of nestKeys) {
+    const nested = rec[k];
+    if (nested && typeof nested === 'object' && typeof (nested as Record<string, unknown>).id === 'string') {
+      return (nested as Record<string, unknown>).id as string;
+    }
+  }
+  return null;
 }
 
 /**
- * The real fan-out, reached only past harnessPreflight (which today refuses unless the
- * maintainer has set RUN_ROUND_HARNESS_WIRED=1 — see the preflight). The intended sequence,
- * one TrueForge session per run over the REST API, files to the run's own branch and NEVER
- * merges:
- *   POST {url}/api/v1/sessions             { agent, model, ... }         — model FQN, bright-data preload:true
- *   POST {url}/api/v1/sessions/{id}/turns  { message: <incident brief> } — the scenario's symptom, not its README
- *   poll GET …/turns/{turnId}              until terminal, resuming tool.response_required pauses
- *   download the close's diagnosis report artifact → grade with the scenario grade.sh, then
- *   fold through the SAME parseScore/parseReportMeta path as local mode.
- * The building of this path (brief source, artifact retrieval, branch handling) is the work P1
- * through P4 unblock; it is left unbuilt rather than shipped guessing at contracts that do not
- * exist. If it is entered before being built, it returns an error, never a false measurement.
+ * The per-scenario incident BRIEF — the symptom presented to the inspector, deliberately NOT
+ * the scenario README (which states the cause; sending it is the SF-2 contamination that
+ * turns diagnosis into transcription). The brief is a `brief.md` in the scenario directory.
+ * It does not exist yet for the battery (adding it is scenario work, outside this runner), so
+ * an absent brief is a clean BLOCK with a clear reason, never a README fallback.
  */
-async function harnessRun(run: PlannedRun, cfg: HarnessConfig, reportsDir: string | null, maxSteps: number | null): Promise<RunResult> {
-  void cfg;
-  void reportsDir;
-  void maxSteps;
-  return Promise.resolve(nonMeasured(run, 'error', 'harnessRun is not built — RUN_ROUND_HARNESS_WIRED was set but the live fan-out has not been implemented; build it before enabling'));
+function locateBrief(scenarioName: string): string | null {
+  const path = join(SCENARIOS_ROOT, scenarioName, 'brief.md');
+  return existsSync(path) ? readFileSync(path, 'utf8') : null;
+}
+
+interface HarnessRunDeps {
+  cfg: HarnessConfig;
+  maxSteps: number | null;
+  reportOutDir: string; // where a downloaded diagnosis report is written before grading
+}
+
+/**
+ * The real fan-out, reached only past harnessPreflight (which refuses unless the maintainer
+ * has set RUN_ROUND_HARNESS_WIRED=1 — the live-verification gate). One TrueForge session per
+ * run over the REST API; it files to the run's own branch (via the agent's close) and NEVER
+ * merges — the corpus-PR merge is the human gate (Art. 2, ADR-0010).
+ *
+ *   POST {url}/api/v1/sessions             {agent:{name}}                — the saved agent (model/skills/bright-data baked in)
+ *   POST {url}/api/v1/sessions/{id}/turns  {input:[{type:user.message}]} — the incident brief (symptom, not README)
+ *   poll GET …/turns/{tid} until terminal, resuming an approval-required pause with user.tool_approval
+ *   download the close's ```sandbox_artifacts diagnosis report → grade with grade.sh, fold
+ *   through the SAME scoreReportToResult path as local mode.
+ *
+ * Anything that cannot be measured (no brief, an unhandled pause type, a poll timeout, a
+ * failed turn, no report artifact) returns blocked/error — never a false measurement.
+ */
+async function harnessRun(run: PlannedRun, deps: HarnessRunDeps): Promise<RunResult> {
+  const { cfg, maxSteps, reportOutDir } = deps;
+  const brief = locateBrief(run.scenarioName);
+  if (brief === null) {
+    return nonMeasured(run, 'blocked', `no incident brief — add tenant-incident/scenarios/${run.scenarioName}/brief.md (the symptom only; the README states the cause and must not be sent). Scenario-authoring work, outside this runner.`);
+  }
+
+  const runOutDir = join(reportOutDir, run.scenarioName, String(run.runIndex));
+
+  try {
+    // Associate this run with its OWN branch and frozen corpus BEFORE any close/deposit: write a
+    // provenance manifest to the run's own output directory (§3). The directory and branch are
+    // derived uniquely per run, so concurrent runs can never share either. Inside the try so an
+    // I/O failure here fails only THIS run, never the whole Promise.all fan-out.
+    mkdirSync(runOutDir, { recursive: true });
+    writeFileSync(join(runOutDir, 'run.json'), `${JSON.stringify(buildRunManifest(run, cfg.corpusRef, cfg.corpusCommit), null, 2)}\n`);
+
+    const session = await tfPostJson(cfg.url, '/api/v1/sessions', buildSessionRequest(cfg.agent));
+    const sid = readId(session, 'session');
+    if (sid === null) return nonMeasured(run, 'error', 'session create returned no id');
+    info(`[${run.label}] session ${sid} (corpus ${cfg.corpusRef}, branch ${run.branch})`);
+
+    const firstTurn = await tfPostJson(cfg.url, `/api/v1/sessions/${sid}/turns`, buildTurnRequest(brief));
+    let tid = readId(firstTurn, 'turn');
+    if (tid === null) return nonMeasured(run, 'error', 'turn create returned no id');
+
+    // Poll to terminal, resuming approval pauses. tid tracks the turn a resume continues on
+    // (a resume may return a fresh turn id, so re-read it each time).
+    let content: string | null = null;
+    for (let poll = 0; poll < HARNESS_MAX_POLLS; poll++) {
+      const turn = await tfGetJson(cfg.url, `/api/v1/sessions/${sid}/turns/${tid}`);
+      const disp = interpretTurnState(turn);
+      if (disp.kind === 'done') {
+        content = disp.content;
+        break;
+      }
+      if (disp.kind === 'failed') {
+        return nonMeasured(run, 'error', `harness turn failed: ${disp.reason}`);
+      }
+      if (disp.kind === 'action-required') {
+        const plan = buildApprovalResume(disp.actions, cfg.approvalPolicy, `unattended round fan-out (policy=${cfg.approvalPolicy}); the human gate is the corpus-PR merge, not tool approval (ADR-0010)`);
+        if (plan.unhandledTypes.length > 0) {
+          return nonMeasured(run, 'error', `harness turn paused on an unhandled action type(s): ${plan.unhandledTypes.join(', ')} — only tool.approval_required has a confirmed resume contract; wire the others once observed live`);
+        }
+        if (plan.input.length === 0) {
+          return nonMeasured(run, 'error', 'harness turn requires an action but there was nothing to resume (no tool_call ids)');
+        }
+        const resumed = await tfPostJson(cfg.url, `/api/v1/sessions/${sid}/turns`, { stream: false, input: plan.input });
+        tid = readId(resumed, 'turn') ?? tid;
+        // Let the server advance past the pause before re-polling, so the SAME action is not
+        // read (and re-approved) on the next iteration. The precise resume/re-poll semantics
+        // are confirmed at live-verification (the RUN_ROUND_HARNESS_WIRED gate).
+        await sleep(HARNESS_POLL_INTERVAL_MS);
+        continue;
+      }
+      await sleep(HARNESS_POLL_INTERVAL_MS);
+    }
+    if (content === null) {
+      return nonMeasured(run, 'error', `harness turn did not reach a terminal state within ${HARNESS_MAX_POLLS} polls — excluded from measurement`);
+    }
+
+    // Retrieve the emitted diagnosis report to grade. The format-patch (the deposit candidate
+    // for the slow loop) is noted but not merged here.
+    const artifacts = parseSandboxArtifacts(content);
+    const { reportPath: sandboxReport, patchPath } = selectRunArtifacts(artifacts);
+    if (sandboxReport === null) {
+      return nonMeasured(run, 'error', `harness run emitted no diagnosis report artifact (${artifacts.length} artifact(s) found${patchPath ? `, incl. patch ${patchPath}` : ''}) — nothing to grade`);
+    }
+
+    // Persist both artifacts under the run's own directory (created with the manifest above).
+    // Only overwrite once THIS run has produced a terminal report, so an earlier failure never
+    // erases a prior good run's artifacts — the reason no eager whole-directory wipe is done.
+    const reportText = await tfGetText(cfg.url, downloadSandboxFilePath(sid, tid, sandboxReport));
+    const localReport = join(runOutDir, 'diagnosis.md');
+    writeFileSync(localReport, reportText);
+
+    // Retrieve and PERSIST the format-patch too — it is the deposit CANDIDATE the slow loop
+    // adjudicates; keeping only its sandbox path (which the report never renders) would strand
+    // it. Its target is the run's OWN branch run/{round}/{scenario}/{n} (§3), applied host-side
+    // by the deposit helper at the slow loop. The runner never pushes and never merges (Art. 2).
+    const localPatch = join(runOutDir, 'deposit.patch');
+    let depositNote = '';
+    if (patchPath !== null) {
+      // Byte-for-byte: the patch must apply unchanged with `git am` at the slow loop.
+      const patchBytes = await tfGetBytes(cfg.url, downloadSandboxFilePath(sid, tid, patchPath));
+      writeFileSync(localPatch, patchBytes);
+      depositNote = `; deposit candidate persisted to ${relToRepo(localPatch)} (target branch ${run.branch}; applied host-side at the slow loop, never by the runner)`;
+      info(`[${run.label}] deposit candidate → ${relToRepo(localPatch)} (branch ${run.branch})`);
+    } else {
+      // This run produced no patch — clear any deposit.patch left by a prior run in a reused
+      // --out so a stale candidate cannot masquerade as this run's. Only reached on a run that
+      // got far enough to emit a report, so it never erases a still-good prior run.
+      rmSync(localPatch, { force: true });
+    }
+
+    return scoreReportToResult(run, localReport, false, maxSteps, `graded the harness diagnosis report (downloaded from the TrueForge sandbox)${depositNote}`);
+  } catch (e) {
+    return nonMeasured(run, 'error', `harness run threw: ${(e as Error).message}`);
+  }
 }
 
 // ── main ──
@@ -397,7 +660,7 @@ async function main(): Promise<void> {
     // Runs are independent (frozen tag + per-run branch, §3) — fan them out concurrently.
     results = await Promise.all(runs.map((r) => Promise.resolve(localRun(r, cli.reportsDir, cli.maxSteps))));
   } else {
-    const cfg = harnessPreflight(cli);
+    const cfg = harnessPreflight(cli, spec.corpus_tag, corpusCommit);
     if (cfg === null) {
       results = runs.map((r) => ({
         run: r,
@@ -412,7 +675,10 @@ async function main(): Promise<void> {
         note: 'harness preflight failed — see the prerequisite blockers above',
       }));
     } else {
-      results = await Promise.all(runs.map((r) => harnessRun(r, cfg, cli.reportsDir, cli.maxSteps)));
+      // Downloaded diagnosis reports land under --out when given, else an ephemeral temp dir.
+      const reportOutDir = cli.outDir !== null ? join(cli.outDir, 'harness-reports') : mkdtempSync(join(tmpdir(), 'run-round-harness-'));
+      // Runs are independent (frozen tag + per-run branch, §3) — fan them out concurrently.
+      results = await Promise.all(runs.map((r) => harnessRun(r, { cfg, maxSteps: cli.maxSteps, reportOutDir })));
     }
   }
 

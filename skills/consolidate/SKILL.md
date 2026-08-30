@@ -30,6 +30,43 @@ Load this at a consolidation pass, from fresh context. It re-derives its inputs
 from git history and the pull requests, so an agent holding none of the fast
 loop's context runs it in full.
 
+## Corpus reachability (invariant)
+
+**The corpus is ensured reachable before any corpus read.** Every `/corpus/…`
+path this pass reads — the lens language, the latch tables, and the target
+stores it searches for a candidate's cheapest existing home — resolves through a
+repo-root symlink the sandbox does not carry by default, and the sandbox is
+recycled after an idle interval, dropping a corpus provisioned once at boot while
+the harness re-clones only the skills. So reachability is an **invariant
+re-ensured before each corpus-touching read**, never a boot-once step: discharge
+it with an idempotent guard that no-ops when the corpus already resolves and
+self-heals when a recycle has dropped it.
+
+    # `$EMBER_ORIGIN` is the ember repository the harness already clones skills from.
+    # Clone into a scratch path and swap it in only once the checkout succeeds, so an
+    # interrupted prior run cannot leave a partial tree that blocks the retry or a
+    # half-provisioned /corpus; every step is chained, so a failure publishes no links.
+    [ -e /corpus/README.md ] || {
+      rm -rf /opt/tf/corpus-src.tmp &&
+      git clone --no-checkout --depth 1 --filter=blob:none "$EMBER_ORIGIN" /opt/tf/corpus-src.tmp &&
+      git -C /opt/tf/corpus-src.tmp sparse-checkout set corpus tenant-incident/corpus &&
+      git -C /opt/tf/corpus-src.tmp checkout &&
+      rm -rf /opt/tf/corpus-src && mv /opt/tf/corpus-src.tmp /opt/tf/corpus-src &&
+      ln -sfn /opt/tf/corpus-src/corpus /corpus &&
+      ln -sfn /opt/tf/corpus-src/tenant-incident /tenant-incident
+    }
+
+The sparse set is `corpus/` **plus** `tenant-incident/corpus/`, and it excludes
+`tenant-incident/scenarios/`: the scenario is the environment, not this pass's
+subject, and the sparse set materializes only those two subtrees. The filing this
+pass hands to `corpus-write` re-ensures the same invariant before it writes.
+
+**Do:** re-ensure reachability with the idempotent guard before each corpus read —
+a no-op when `/corpus` resolves, a self-heal when a recycle has dropped it.
+**Don't:** don't provision the corpus once at boot and treat it as durable — the
+idle recycle drops the provisioned corpus while re-cloning the skills, so a
+boot-once step reads an empty `/corpus` on a later turn.
+
 ## What this pass reads
 
 The input is the signal the fast loop deposited: the per-entry dispositions
@@ -156,6 +193,22 @@ five-slot contract against the target store's SCHEMA, anchor its warrant to the
 pull requests and admitted entries it aggregates, spawn an examiner to attack the
 draft, and file both on a branch through the approval gate. The pull request's
 merge is the admitting write; this pass never mints an id.
+
+The slow loop runs where the human is present, so a consolidation candidate is
+filed as a human-present **promotion pull request**. The drafting and examiner
+discipline are `corpus-write`'s, but a promotion is not an incident deposit: it
+carries no `Incident-Id` and does not ride the fast loop's unattended
+incident-deposit marking — the `incident-responder` author, the `Incident-*`
+trailers, and the `tools/patch-to-pr.sh` host helper (ADR-0009/0015), which sign
+a sandboxed incident-responder deposit and reject a commit that keys to no
+incident. The human present through the slow loop routes and files the promotion;
+its merge admits.
+
+**Do:** file a promotion as a promotion pull request, distinct from the fast
+loop's `Incident-*`-marked deposit — the consolidator keys to no incident.
+**Don't:** don't stamp a consolidation draft with an `Incident-Id` or route it
+through the incident-deposit host helper; a promotion that keys to no incident is
+rejected there, and a forged id mismarks the learning arc (Article 12).
 
 Hold each promotion to the bar its tier declares in the `promotion-review` skill —
 a rule to two case-store decisions on distinct surfaces, a case to two anchored

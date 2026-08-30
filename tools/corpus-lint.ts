@@ -48,6 +48,13 @@ export const ENTRY_STORES = ['decisions', 'rules', 'beliefs'] as const;
 // vocabulary/) are corrected in place — exempt from the frozen-path check.
 export const FROZEN_STORES = ['decisions', 'beliefs'] as const;
 
+// Self-describing tenant ledgers frozen at admission whose directory name is not a FROZEN_STORES
+// layer name, so the {root}/{store} enumeration in frozenPathspec does not reach them (the build
+// ADR store is reached only because its dir is named `decisions`). Each entry's SHAPE is owned by
+// its own validator; this gate owns its byte-immutability, with the mutable-key contract fixed in
+// frozenContractForPath.
+const SELF_DESCRIBING_FROZEN_DIRS = ['tenant-incident/corpus/incidents'] as const;
+
 // Admitted-entry selection (`^<PREFIX>-\d{4}\.md$`) and the per-store prefix live in the
 // shared contract as isEntryFile / STORE_PREFIX, imported above: the producer (index-gen)
 // and this verifier resolve one identical set, never two hand-kept literals that could
@@ -533,6 +540,13 @@ function frozenContractForPath(path: string, selfDescribing: ReadonlySet<string>
   if (path.startsWith('tenant-build/corpus/decisions/') && /^ADR-\d{4}\.md$/.test(name)) {
     return ['status', 'superseded-by', 'converged-into'];
   }
+  // The incident tenant's self-describing case ledger, bound to its exact tree: INC-nnnn (exact
+  // four digits, never widened). A closed case is frozen at admission; only its lifecycle fields
+  // flip (status, and the successor pointer on supersession). Byte-immutability is what this gate
+  // owns; entry shape is owned by the store's own validator, the same split the ADR store uses.
+  if (path.startsWith('tenant-incident/corpus/incidents/') && /^INC-\d{4}\.md$/.test(name)) {
+    return ['status', 'superseded-by'];
+  }
   // Layer ledgers (decisions, beliefs) under any corpus root — the root scaffold or a tenant
   // instance that INHERITS the layer D-/B- contract (a tenant store with its own SCHEMA is
   // self-describing and owned by its own validator, so it is excluded here).
@@ -575,6 +589,11 @@ function frozenPathspec(root: string, base: string): string[] {
   for (const name of gitTopLevelNames(root, base)) if (name.startsWith('tenant-')) roots.add(`${name}/corpus`);
   const dirs: string[] = [];
   for (const r of [...roots].sort()) for (const store of FROZEN_STORES) dirs.push(`${r}/${store}`);
+  // Self-describing frozen ledgers named outside FROZEN_STORES, added only under a discovered root
+  // (present in the working tree or the base) so a deletion is still compared against the base.
+  for (const dir of SELF_DESCRIBING_FROZEN_DIRS) {
+    if (roots.has(dir.slice(0, dir.lastIndexOf('/')))) dirs.push(dir);
+  }
   return dirs;
 }
 
@@ -1135,7 +1154,7 @@ export const RULES: Rule[] = [
   { name: 'five-slot', run: fiveSlot, residue: ['checks slot presence and count, not that a section says anything true, that ≥2 warrant IDs are real and cross-surface, or that a falsifier tests the right quantity.', "moot-when (the decisions/rules retirement slot) presence is NOT enforced — it may be legitimately absent (a rule may exit by coverage migration); disclosed, and flagged for the SCHEMA author."] },
   { name: 'tombstone', run: tombstone, residue: ['checks a successor pointer is present on retirement, not that the pointed-to entry exists or is the right successor.'] },
   { name: 'constitution-cap', run: constitutionCap, residue: ['counts articles by marker; does not verify eviction was actually performed, only the resulting count. Targets the shipped skill, never planning/.'] },
-  { name: 'frozen-path', run: frozenPath, residue: ['freezes body bytes and non-lifecycle frontmatter against the merge-base, per store, across every corpus root (layer ledgers and the build ADR store, each on its own mutable-key contract); does not verify a status flip was warranted or that a successor exists. UNCHECKED when no base ref resolves, or when the resolved base equals HEAD (a self-compare — see skips) — CI must pass the pre-change base per event.'] },
+  { name: 'frozen-path', run: frozenPath, residue: ['freezes body bytes and non-lifecycle frontmatter against the merge-base, per store, across every corpus root (layer ledgers, the build ADR store, and the incident case ledger, each on its own mutable-key contract); does not verify a status flip was warranted or that a successor exists. UNCHECKED when no base ref resolves, or when the resolved base equals HEAD (a self-compare — see skips) — CI must pass the pre-change base per event.'] },
   { name: 'no-duty-language', run: noDutyLanguage, residue: ["keys on the literal 'fires-when'; duty phrasing written without that token (e.g. 'always check…') is review judgment."] },
   { name: 'banned-tell', run: bannedTell, residue: ['lexical match over layer prose, the build ADR store, and incident-tenant *.md (fixtures excluded); cannot distinguish a genuine tell from a rare legitimate word — common-word tells are non-failing warnings. LANGUAGE.md’s L1 tables and quoted examples are excluded (it defines the tells); its prose is still scanned for hard tells.'] },
   { name: 'date-format', run: dateFormat, residue: ['flags malformed date shapes; does not check a date is real, correct, or that a needed date is present. A capitalized month word before a number may false-positive.'] },

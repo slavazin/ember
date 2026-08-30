@@ -9,12 +9,13 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test tools/*.test.ts tenant-build/tools/*.test.ts tenant-incident/experiments/*.test.ts",
+    "test": "node --import tsx --test tools/*.test.ts tenant-build/tools/*.test.ts tenant-incident/tools/*.test.ts tenant-incident/experiments/*.test.ts",
     "gen:check": "node --import tsx tools/index-gen.ts --check",
     "lint": "node --import tsx tools/corpus-lint.ts",
     "qodo-gate": "node --import tsx tools/qodo-gate.ts",
     "adr": "node --import tsx tenant-build/tools/adr.ts",
     "adr:check": "node --import tsx tenant-build/tools/adr.ts check",
+    "incidents:check": "node --import tsx tenant-incident/tools/incidents.ts check",
     "round": "node --import tsx tenant-incident/experiments/run-round.ts"
   },
   "dependencies": {
