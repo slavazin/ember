@@ -102,11 +102,14 @@ against the provoking condition is a guess.
 
 The remediation's durable effect reaches the estate only through the human merge:
 the agent proposes, no agent writes to the live surface, and no agent merges its
-own fix (Articles 2 and 3; ADR-0018). The sandbox is disposable, so the fix leaves
-it as a formatted patch the host applies in an isolated worktree and opens as a
-pull request, the merge the adjudicating write — the same patch-out shape a corpus
-deposit takes (ADR-0009). The in-session approval gates the emit; the merge admits
-the fix.
+own fix (Articles 2 and 3; ADR-0018). The fix leaves the sandbox the way any
+sandbox write does — the agent commits it and emits it as a formatted patch
+(`git format-patch`), the harness retrieves that patch through its file-download
+API, and off the host a human applies it with `git am` in an isolated worktree off
+`origin/main`, pushes the branch, and opens a pull request whose merge is the
+adjudicating write. This is ADR-0009's patch-out shape: the in-session approval
+gates the emit, and the merge admits the fix. The sandbox holds no push credential
+and opens no pull request itself.
 
 This proposal is the incident's resolution, not the learning deposit. The fix that
 resolves this incident and the corpus entry a future incident of the class
@@ -119,13 +122,14 @@ a deposit: the deposit helper (`tools/patch-to-pr.sh`) admits only fully-signed
 corpus commits and refuses anything else, and it is not weakened to carry an
 unsigned fix.
 
-**Residue:** the operational-fix host path — the emit, retrieval, host-apply, and
-pull-request-open steps for an unsigned fix — is not yet built; the only host
-helper that exists admits signed corpus deposits alone (ADR-0018 opens this as a
-build follow-up). Until it is, the fix is verified and proposed in the sandbox, and
-the human-side landing is carried out by hand rather than by a helper. This is a
-disclosed floor, not a gap in the gate (Article 8): the merge stays the only
-admitting write whether or not a helper automates the emit.
+**Residue:** the host side of this path is carried out by hand. The committed host
+helper (`tools/patch-to-pr.sh`) automates only the deposit path — it validates
+every applied commit as a fully-signed corpus deposit and refuses anything else — so
+it does not apply an unsigned operational fix, and an automating helper for the fix
+path is a build follow-up (ADR-0018). This is a disclosed floor, not a gap in the
+gate (Article 8): the `git am` / push / pull-request steps above are the same
+whether a human runs them or a helper does, and the merge stays the only admitting
+write either way.
 
 **Do:** propose the verified fix for the human merge, and hand the session to
 `close` once the fix is filed.
