@@ -46,7 +46,10 @@ self-heals when a recycle has dropped it.
     # Clone into a scratch path and swap it in only once the checkout succeeds, so an
     # interrupted prior run cannot leave a partial tree that blocks the retry or a
     # half-provisioned /corpus; every step is chained, so a failure publishes no links.
-    [ -e /corpus/README.md ] || {
+    # The guard tests BOTH published roots — /corpus and the tenant /tenant-incident/corpus —
+    # so a partial provisioning (one link present, the other dropped or never made) re-heals
+    # instead of reading as done and failing the tenant read.
+    { [ -e /corpus/README.md ] && [ -e /tenant-incident/corpus/README.md ]; } || {
       rm -rf /opt/tf/corpus-src.tmp &&
       git clone --no-checkout --depth 1 --filter=blob:none "$EMBER_ORIGIN" /opt/tf/corpus-src.tmp &&
       git -C /opt/tf/corpus-src.tmp sparse-checkout set corpus tenant-incident/corpus &&
@@ -62,7 +65,7 @@ subject, and the sparse set materializes only those two subtrees. The filing thi
 pass hands to `corpus-write` re-ensures the same invariant before it writes.
 
 **Do:** re-ensure reachability with the idempotent guard before each corpus read —
-a no-op when `/corpus` resolves, a self-heal when a recycle has dropped it.
+a no-op when both corpus roots resolve, a self-heal when a recycle has dropped it.
 **Don't:** don't provision the corpus once at boot and treat it as durable — the
 idle recycle drops the provisioned corpus while re-cloning the skills, so a
 boot-once step reads an empty `/corpus` on a later turn.

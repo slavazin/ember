@@ -17,8 +17,10 @@ searching the corpus tree for a file of this name.
 ## Corpus reachability (invariant)
 
 **The corpus is ensured reachable before any corpus read.** This procedure reads
-`/corpus/README.md` and the target store's `/corpus/…/SCHEMA.md`; each `/corpus/…`
-path resolves through a repo-root symlink the sandbox does not carry by default, and
+`/corpus/README.md` and the target store's `SCHEMA.md` — `/corpus/…/SCHEMA.md` for a
+layer store, `/tenant-incident/corpus/incidents/SCHEMA.md` for the incident case
+ledger; each such path resolves through a repo-root symlink the sandbox does not
+carry by default, and
 the sandbox is recycled after an idle interval, dropping a corpus provisioned once
 at boot while the harness re-clones only the skills. So reachability is an
 **invariant re-ensured before each corpus-touching read**, never a boot-once step:
@@ -29,7 +31,10 @@ and self-heals when a recycle has dropped it.
     # Clone into a scratch path and swap it in only once the checkout succeeds, so an
     # interrupted prior run cannot leave a partial tree that blocks the retry or a
     # half-provisioned /corpus; every step is chained, so a failure publishes no links.
-    [ -e /corpus/README.md ] || {
+    # The guard tests BOTH published roots — /corpus and the tenant /tenant-incident/corpus —
+    # so a partial provisioning (one link present, the other dropped or never made) re-heals
+    # instead of reading as done and failing the tenant read.
+    { [ -e /corpus/README.md ] && [ -e /tenant-incident/corpus/README.md ]; } || {
       rm -rf /opt/tf/corpus-src.tmp &&
       git clone --no-checkout --depth 1 --filter=blob:none "$EMBER_ORIGIN" /opt/tf/corpus-src.tmp &&
       git -C /opt/tf/corpus-src.tmp sparse-checkout set corpus tenant-incident/corpus &&
@@ -47,7 +52,7 @@ only those two subtrees, so `/tenant-incident/scenarios` never resolves. This
 mirrors the harness's own per-sandbox skill self-heal.
 
 **Do:** re-ensure reachability with the idempotent guard before each corpus read —
-a no-op when `/corpus` resolves, a self-heal when a recycle has dropped it.
+a no-op when both corpus roots resolve, a self-heal when a recycle has dropped it.
 **Don't:** don't provision the corpus once at boot and treat it as durable — the
 idle recycle drops the provisioned corpus while re-cloning the skills, so a
 boot-once step reads an empty `/corpus` on a later turn.
@@ -80,17 +85,39 @@ holding a view the root does not (the examiner's, the recon shape's), and the
 drafter's view is the root's own. Fill the five slots above against the target
 store's `SCHEMA.md`, and:
 
-- Raise the abstraction to the constraint the evidence supports — state the
-  judgment decoupled from the objects it was learned on, and no further than the
-  anchors can still falsify.
+- For a constraint entry — a rule, belief, or decision — raise the abstraction to
+  the constraint the evidence supports: state the judgment decoupled from the
+  objects it was learned on, and no further than the anchors can still falsify.
+- For an incident case, draft the occurrence itself against the incidents
+  [SCHEMA.md](/tenant-incident/corpus/incidents/SCHEMA.md) — the symptom as it
+  presented, the forecast frozen before the fix, the root cause, and the learning,
+  each anchored as a dated fact. A case is not raised into a standing constraint;
+  the constraint it nominates is a separate entry that cites the case.
 - Set the id as the target store's `SCHEMA.md` directs. A store that mints its
   id at admission takes an empty id, and the merge mints it; a store that
-  reserves its id at draft — the build ADR store — carries the reserved id from
-  the draft, its filename equal to it.
+  reserves its id at draft — the incident case ledger
+  `tenant-incident/corpus/incidents/`, or the build ADR store — carries the
+  reserved id from the draft, its filename equal to it. Reserve a four-digit id
+  the store's occupied set does not already hold, read from the reachable corpus:
+  the ids are gap-tolerant, and the lowest free one is the convention. The merge
+  serializes the reservation — two drafts that pick the same id from the same
+  occupied set collide at merge, where the later one is redrafted onto a free id.
 
-**Do:** raise the abstraction as far as the anchors can still bite.
+**Do:** raise a constraint entry's abstraction as far as the anchors can still bite.
 **Don't:** don't abstract past the evidence — a claim the anchors cannot falsify
 is a slogan, not an entry.
+
+**Do:** draft an incident case as the occurrence's dated record against the
+incidents SCHEMA — facts anchored, not raised into a constraint.
+**Don't:** don't abstract an incident case into a standing rule or decision; the
+case is the evidence a nominated constraint cites, and abstracting it away destroys
+the dated record the learning delta reads.
+
+**Do:** reserve a reserve-at-draft id from the store's occupied set, its filename
+equal to the id.
+**Don't:** don't leave a reserve-at-draft id blank for the merge to mint — the
+incident case ledger and the build ADR store carry the id from filing, and a blank
+breaks the filename-equals-id contract their validators check.
 
 ## Examination
 
@@ -164,6 +191,12 @@ deposit in the learning arc:
         --trailer 'Incident-Class: <class>' \
         --trailer 'Corpus-Store: <target store path>' \
         --trailer 'Deposited-By: incident-responder'
+
+`Corpus-Store` is the store the entry lands in: `tenant-incident/corpus/incidents/`
+for an incident case, or the layer store path for a rule, belief, or decision the
+case nominates. `Incident-Id` and `Incident-Class` are the incident coordinates the
+close hands in; for an incident case, `Incident-Id` is the entry's own reserved id,
+so the case entry, the deposit branch, and the close-out record key on one id.
 
 Emit the commit as a formatted patch so its author and trailers leave the sandbox
 intact, and let the harness retrieve that patch. One incident files a candidate
