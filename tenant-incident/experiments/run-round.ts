@@ -26,7 +26,7 @@
 // Prose follows /corpus/LANGUAGE.md.
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync, existsSync, writeFileSync, mkdirSync, mkdtempSync, appendFileSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, appendFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -453,6 +453,18 @@ async function tfGetText(base: string, path: string): Promise<string> {
   return text;
 }
 
+// Bytes, not text: a git format-patch must be persisted byte-for-byte so `git am` applies it
+// unchanged. Response.text() always UTF-8-decodes, which would silently rewrite any non-UTF-8
+// byte — so the patch is fetched through arrayBuffer instead.
+async function tfGetBytes(base: string, path: string): Promise<Buffer> {
+  const res = await tfFetch(`${base}${path}`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`GET ${path} → ${res.status} ${res.statusText}: ${text.slice(0, 300)}`);
+  }
+  return Buffer.from(await res.arrayBuffer());
+}
+
 // The TF create-session / create-turn responses carry an id; be tolerant of a top-level id or
 // a nested {session|turn}.id wrapper (the exact envelope is confirmed live before enabling).
 function readId(obj: unknown, ...nestKeys: string[]): string | null {
@@ -510,8 +522,11 @@ async function harnessRun(run: PlannedRun, deps: HarnessRunDeps): Promise<RunRes
 
   // Associate this run with its OWN branch and frozen corpus BEFORE any close/deposit: write a
   // provenance manifest to the run's own output directory (§3). The directory and branch are
-  // derived uniquely per run, so concurrent runs can never share either.
+  // derived uniquely per run, so concurrent runs can never share either. The directory is
+  // RECREATED clean first — a reused --out must never leave a prior run's deposit.patch beside
+  // this run's diagnosis (a patchless rerun would otherwise expose a stale candidate).
   const runOutDir = join(reportOutDir, run.scenarioName, String(run.runIndex));
+  rmSync(runOutDir, { recursive: true, force: true });
   mkdirSync(runOutDir, { recursive: true });
   writeFileSync(join(runOutDir, 'run.json'), `${JSON.stringify(buildRunManifest(run, cfg.corpusRef, cfg.corpusCommit), null, 2)}\n`);
 
@@ -579,9 +594,10 @@ async function harnessRun(run: PlannedRun, deps: HarnessRunDeps): Promise<RunRes
     // by the deposit helper at the slow loop. The runner never pushes and never merges (Art. 2).
     let depositNote = '';
     if (patchPath !== null) {
-      const patchText = await tfGetText(cfg.url, downloadSandboxFilePath(sid, tid, patchPath));
+      // Byte-for-byte: the patch must apply unchanged with `git am` at the slow loop.
+      const patchBytes = await tfGetBytes(cfg.url, downloadSandboxFilePath(sid, tid, patchPath));
       const localPatch = join(runOutDir, 'deposit.patch');
-      writeFileSync(localPatch, patchText);
+      writeFileSync(localPatch, patchBytes);
       depositNote = `; deposit candidate persisted to ${relToRepo(localPatch)} (target branch ${run.branch}; applied host-side at the slow loop, never by the runner)`;
       info(`[${run.label}] deposit candidate → ${relToRepo(localPatch)} (branch ${run.branch})`);
     }
