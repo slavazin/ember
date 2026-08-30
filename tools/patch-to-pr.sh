@@ -107,7 +107,9 @@ read_fm() {
     infm && $0 == "---" { exit }
     infm {
       if ($0 ~ ("^" key ":")) {
-        val=$0; sub(("^" key ":[ \t]*"),"",val); sub(/[ \t]+$/,"",val)
+        val=$0; sub(("^" key ":[ \t]*"),"",val)
+        sub(/[ \t]+#.*/,"",val)         # drop a YAML inline comment (whitespace + # …)
+        sub(/[ \t]+$/,"",val)
         print val; exit
       }
     }
