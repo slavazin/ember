@@ -24,7 +24,17 @@ reads the consultation record the working session keeps.
    record, and git history is the trace.
 3. **Orient.** Declare the shape of the work in hand — the terms a store index or
    a latch row can match against.
-4. **Walk the planning latches.** Poll each row of `corpus/latches/planning.md`
+4. **Consult the shape-matched stores.** Against the work-shape declared at
+   Orient, open each store index whose stage-one key routes on it: the `rules`
+   index for a duty whose `fires-when` matches the presentation in hand, the
+   `cases` index for a settled constraint whose summary matches, the `beliefs`
+   index for a world-claim the work would depend on. Open the record behind any
+   hook that fires and apply from the record — the duty, the constraint, the
+   priced claim — following each store index's own read protocol, and record each
+   consulted entry as the consultation happens (below). A merged rule's duty
+   reaches the work only when the index is opened before the diagnosis, so this
+   consultation precedes recon.
+5. **Walk the planning latches.** Poll each row of `corpus/latches/planning.md`
    against the work in hand and discharge the owed act of every row that fires;
    leave the walk's `latch-walk:` line in the work product (format and cautions:
    [/corpus/latches/README.md](/corpus/latches/README.md)).
@@ -33,6 +43,12 @@ reads the consultation record the working session keeps.
 indexes and latch rows route on.
 **Don't:** don't open stores at random ahead of a declared shape; an unrouted read
 is the scan the indexes exist to replace.
+
+**Do:** open every store index whose key matches the declared shape before the
+diagnosis begins, and apply from the record it opens, never from the index line.
+**Don't:** don't defer the store indexes past the diagnosis or fold them into
+recon — an unconsulted rule is unreachable knowledge, silent until a miss pays for
+it, and the corpus-carried learning the boot exists to recover never arrives.
 
 **Do:** emit the planning walk's `latch-walk:` line in the work product.
 **Don't:** don't treat the attestation as proof the consultation was honest — it
