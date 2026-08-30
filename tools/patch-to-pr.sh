@@ -347,18 +347,26 @@ if [ "$PUSH" = "--push" ]; then
     GIT_CONFIG_VALUE_0="AUTHORIZATION: bearer $TOKEN" \
       git -C "$WT" push -q origin "$BRANCH"
   fi
-  # Open a PR only if none is already open for this head — so a retry after a push that
-  # succeeded but whose PR-open failed does not error on "a pull request already exists".
-  # Do NOT suppress a failed lookup: an auth/network error must surface, not masquerade as
-  # "no PR" and drive a spurious create. stderr is left intact and a failure exits here.
+  # Open a PR only if THE corpus-deposit PR is already open for this head — so a retry
+  # after a push that succeeded but whose PR-open failed does not error on "a pull request
+  # already exists". `gh pr list --head` filters by branch NAME only (no owner qualifier),
+  # so verify identity in the query: same repository (not a fork — isCrossRepository false),
+  # base main, and the corpus-deposit label. A fork PR or a mislabeled same-name PR must not
+  # be mistaken for the required filing. Do NOT suppress a failed lookup: an auth/network
+  # error must surface, not masquerade as "no PR" and drive a spurious create — stderr is
+  # left intact and a failure exits here.
   if ! EXISTING_PR="$(GH_TOKEN="$TOKEN" gh pr list --repo slavazin/ember --head "$BRANCH" --state open \
-    --json url --jq '.[0].url // empty')"; then
+    --json url,baseRefName,isCrossRepository,labels \
+    --jq "[.[] | select(.isCrossRepository==false and .baseRefName==\"main\" and (any(.labels[]?; .name==\"$LABEL\"))) | .url] | .[0] // empty")"; then
     echo "✗ failed to query existing pull requests for $BRANCH — not filing, to avoid a duplicate (surface to human)" >&2
     exit 3
   fi
   if [ -n "$EXISTING_PR" ]; then
-    echo "→ pull request already open for $BRANCH: $EXISTING_PR"
+    echo "→ corpus-deposit pull request already open for $BRANCH: $EXISTING_PR"
   else
+    # If a same-name PR exists but is not the corpus-deposit filing (wrong base/label), the
+    # create below fails loudly ("a pull request already exists") — an actionable error, not
+    # a silent skip.
     GH_TOKEN="$TOKEN" gh pr create --repo slavazin/ember --head "$BRANCH" --base main \
       --label "$LABEL" --title "$TITLE" --body-file "$BODY_FILE"
   fi
